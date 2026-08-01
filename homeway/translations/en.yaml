@@ -1,0 +1,11 @@
+# yamllint disable rule:line-length
+---
+configuration:
+  log_level:
+    name: Log Level
+    description: >-
+      The log level to use for the app. Defaults to info, but debug is helpful for troubleshooting.
+  FACTORY_RESET_CLEAR_DATA:
+    name: "FACTORY RESET (Wipe Identity)"
+    description: >-
+      DANGER: Turn this ON and restart the Add-on to wipe the PluginId. Use this BEFORE cloning the SD Card for mass distribution. The Add-on will freeze after wiping. Turn this switch OFF immediately, and then shut down the Pi for cloning.
