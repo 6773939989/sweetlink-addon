@@ -4,7 +4,7 @@
 # ATTENZIONE: questo file vive nel monorepo privato sotto sweetlink/.github/workflows/.
 # GitHub Actions esegue solo i workflow in .github/workflows/ ALLA ROOT di un repository:
 # nel monorepo questo file e' quindi inerte, e diventa attivo solo nel repo pubblico
-# sweetlink, dove la subtree split lo porta alla root. Vedi PUBLISHING.md.
+# sweetlink-addon, dove la subtree split lo porta alla root. Vedi PUBLISHING.md.
 #
 # Il tag dell'immagine e' preso da `version:` in addon/config.yaml, perche' e' esattamente
 # il tag che il Supervisor di Home Assistant cerca quando `image:` e' attiva.
@@ -26,7 +26,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BASE: ghcr.io/6773939989/sweetlink
+  IMAGE_BASE: ghcr.io/6773939989/sweetlink-addon
 
 jobs:
   version:

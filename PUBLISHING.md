@@ -5,9 +5,9 @@ si pubblica. Vale per chiunque tocchi questo codice.
 
 ## I due repository
 
-| | `sweetplace` (privato) | `sweetlink` (pubblico) |
+| | `sweetplace` (privato) | `sweetlink-addon` (pubblico) |
 |---|---|---|
-| URL | `github.com/6773939989/sweetplace` | `github.com/6773939989/sweetlink` |
+| URL | `github.com/6773939989/sweetplace` | `github.com/6773939989/sweetlink-addon` |
 | Percorso | cartella `sweetlink/` | root del repo |
 | Ruolo | **fonte** — si lavora solo qui | **output generato** |
 | Contiene | anche `onboarding/`, `core/`, `installatori/`, `ha-themes/` | solo l'add-on |
@@ -50,7 +50,7 @@ git push sweetlink-pub split/sweetlink:refs/heads/main
 Se il remote non è configurato:
 
 ```bash
-git remote add sweetlink-pub https://github.com/6773939989/sweetlink
+git remote add sweetlink-pub https://github.com/6773939989/sweetlink-addon
 ```
 
 > ⚠️ Il prefisso è `sweetlink`, **non** `sweetlink/addon`. Con il prefisso sbagliato il repo
@@ -60,8 +60,8 @@ git remote add sweetlink-pub https://github.com/6773939989/sweetlink
 ### Verifica dopo la pubblicazione
 
 ```bash
-gh api repos/6773939989/sweetlink/contents/repository.yaml   # deve esistere
-gh api repos/6773939989/sweetlink/contents/addon/config.yaml # deve esistere
+gh api repos/6773939989/sweetlink-addon/contents/repository.yaml   # deve esistere
+gh api repos/6773939989/sweetlink-addon/contents/addon/config.yaml # deve esistere
 ```
 
 `repository.yaml` deve stare **alla root** e la cartella dell'add-on al **primo livello**:

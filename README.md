@@ -5,7 +5,7 @@
 > | | Dove | Ruolo |
 > |---|---|---|
 > | **Fonte** | monorepo privato `sweetplace`, cartella `sweetlink/` | **è qui che si lavora** |
-> | **Pubblicazione** | [`github.com/6773939989/sweetlink`](https://github.com/6773939989/sweetlink) (pubblico) | **output generato**, serve solo a far scaricare l'add-on agli hub |
+> | **Pubblicazione** | [`github.com/6773939989/sweetlink-addon`](https://github.com/6773939989/sweetlink-addon) (pubblico) | **output generato**, serve solo a far scaricare l'add-on agli hub |
 >
 > Il repository pubblico è **rigenerato** dal monorepo a ogni rilascio. Qualsiasi modifica
 > fatta direttamente lì viene **persa** alla pubblicazione successiva. Esiste per un solo
