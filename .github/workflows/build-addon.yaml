@@ -1,0 +1,157 @@
+---
+# Costruisce e pubblica l'immagine dell'add-on su GitHub Container Registry.
+#
+# ATTENZIONE: questo file vive nel monorepo privato sotto sweetlink/.github/workflows/.
+# GitHub Actions esegue solo i workflow in .github/workflows/ ALLA ROOT di un repository:
+# nel monorepo questo file e' quindi inerte, e diventa attivo solo nel repo pubblico
+# sweetlink, dove la subtree split lo porta alla root. Vedi PUBLISHING.md.
+#
+# Il tag dell'immagine e' preso da `version:` in addon/config.yaml, perche' e' esattamente
+# il tag che il Supervisor di Home Assistant cerca quando `image:` e' attiva.
+
+name: Build add-on image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "addon/**"
+      - ".github/workflows/build-addon.yaml"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Pubblicare l'immagine su GHCR (no = solo build di verifica)"
+        type: boolean
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/6773939989/sweetlink
+
+jobs:
+  version:
+    name: Legge la versione dichiarata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Estrae version da addon/config.yaml
+        id: read
+        run: |
+          set -euo pipefail
+          version="$(yq -r '.version' addon/config.yaml)"
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::version non trovata in addon/config.yaml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Versione dichiarata: $version"
+
+      - name: Avverte se la versione esiste gia' su GHCR
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          v="${{ steps.read.outputs.version }}"
+          for arch in aarch64 amd64; do
+            if docker manifest inspect "${{ env.IMAGE_BASE }}/$arch:$v" >/dev/null 2>&1; then
+              echo "::warning::${{ env.IMAGE_BASE }}/$arch:$v esiste gia' e verra' sovrascritta. Se questo e' un rilascio, incrementa version: in addon/config.yaml."
+            fi
+          done
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Le uniche architetture dichiarate valide dalla documentazione Home Assistant.
+          # armhf, armv7 e i386 sono deprecate: per riattivarle vanno aggiunte QUI e
+          # anche in `arch:` dentro addon/config.yaml, altrimenti le due liste divergono
+          # e un hub su quell'architettura non troverebbe la propria immagine.
+          - arch: aarch64
+            platform: linux/arm64
+            base: homeassistant/aarch64-base-python
+          - arch: amd64
+            platform: linux/amd64
+            base: homeassistant/amd64-base-python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verifica che l'architettura sia dichiarata in config.yaml
+        run: |
+          set -euo pipefail
+          if ! yq -e '.arch[] | select(. == "${{ matrix.arch }}")' addon/config.yaml >/dev/null 2>&1; then
+            echo "::error::${{ matrix.arch }} non e' in arch: dentro addon/config.yaml. Le due liste devono coincidere."
+            exit 1
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.platform != 'linux/amd64'
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login su GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./addon
+          file: ./addon/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_BASE }}/${{ matrix.arch }}:${{ needs.version.outputs.version }}
+            ${{ env.IMAGE_BASE }}/${{ matrix.arch }}:latest
+          build-args: |
+            BUILD_FROM=${{ matrix.base }}
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=${{ needs.version.outputs.version }}
+            BUILD_NAME=Sweetplace remote cloud
+            BUILD_DESCRIPTION=Secure remote access for Home Assistant
+            BUILD_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  done:
+    name: Riepilogo
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Istruzioni
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          {
+            echo "## Immagini pubblicate"
+            echo
+            echo '```'
+            echo "${{ env.IMAGE_BASE }}/aarch64:$v"
+            echo "${{ env.IMAGE_BASE }}/amd64:$v"
+            echo '```'
+            echo
+            echo "### Al primo rilascio, una volta sola"
+            echo
+            echo "I package su GHCR nascono **privati**. Il Supervisor di Home Assistant li scarica"
+            echo "in anonimo, quindi finche' restano privati l'installazione fallisce con un errore"
+            echo "di autenticazione poco leggibile."
+            echo
+            echo "Vai su https://github.com/6773939989?tab=packages , apri ciascun package →"
+            echo "Package settings → Change visibility → **Public**."
+            echo
+            echo "### Poi"
+            echo
+            echo "Scommenta la riga \`image:\` in \`addon/config.yaml\` **nel monorepo**, non qui."
+          } >> "$GITHUB_STEP_SUMMARY"

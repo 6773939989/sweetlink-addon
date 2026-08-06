@@ -93,9 +93,9 @@ LABEL \
     org.opencontainers.image.vendor="Sweetplace" \
     org.opencontainers.image.authors="Sweetplace" \
     org.opencontainers.image.licenses="AGPL-3.0-only" \
-    org.opencontainers.image.url="https://github.com/6773939989/sweet-link" \
-    org.opencontainers.image.source="https://github.com/6773939989/sweet-link" \
-    org.opencontainers.image.documentation="https://github.com/6773939989/sweet-link/blob/main/README.md" \
+    org.opencontainers.image.url="https://github.com/6773939989/sweetlink" \
+    org.opencontainers.image.source="https://github.com/6773939989/sweetlink" \
+    org.opencontainers.image.documentation="https://github.com/6773939989/sweetlink/blob/main/README.md" \
     org.opencontainers.image.created=${BUILD_DATE} \
     org.opencontainers.image.revision=${BUILD_REF} \
     org.opencontainers.image.version=${BUILD_VERSION}
