@@ -12,10 +12,4 @@ pip install -r ../addon/requirements.txt
 echo "Installing pylint"
 sudo pip install pylint 1> /dev/null 2> /dev/null
 
-echo "Creating folders"
-mkdir -p /home/quinn/sweetplace
-
-if [ ! -d "/mnt/c/Users/quinn/Repos/Sweetplace.AddOn/" ]; then
-  echo "Error! The repo must be checked out to /mnt/c/Users/quinn/Repos/Sweetplace.AddOn/ or the dev config must be updated to reflect the new location."
-  exit 1
-fi
+echo "Done. Debug configs are in .vscode/launch.json"

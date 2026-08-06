@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ..
+cd "$(dirname "$0")/.."
 
 echo "Linting..."
-pylint --output-format=colorized --enable spelling -j 8 ./**/*.py
+pylint --rcfile .pylintrc --output-format=colorized -j 8 addon
