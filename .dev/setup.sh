@@ -6,7 +6,7 @@ sudo apt-get install python3 -y
 sudo apt-get install python3-pip -y
 
 echo "Installing Python Libs"
-pip install -r ../sweetplace/requirements.txt
+pip install -r ../addon/requirements.txt
 
 # Use sudo, so it installs globally
 echo "Installing pylint"

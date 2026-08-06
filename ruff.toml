@@ -1,4 +1,4 @@
 # This config controls the ruff linter.
 
 # Exclude the proto folder for Ruff since we can't control it.
-extend-exclude = ["homeway/homeway/Proto"]
+extend-exclude = ["addon/sweetlink/Proto"]

@@ -9,7 +9,7 @@ It retains all the core secure tunneling and cloud synchronization features of H
 This fork introduces the following capabilities on top of the Homeway core:
 
 - **Zero-Touch Provisioning (Hardware Claiming):** At startup, the AddOn automatically discovers the hardware's physical MAC Address and its generated Homeway Cloud URL, securely reporting them to the Sweetplace backend. This allows end-users to link their physical device with zero technical configuration.
-- **Granular Entity Filtering (YAML):** Bypasses the standard Home Assistant UI toggle system. The AddOn strictly enforces exposure rules based on local YAML configuration files (`alexa.yaml`, `siri.yaml`, `homekit.yaml`), ensuring only whitelisted entities ever leave the local network.
+- **Granular Entity Filtering (YAML):** Bypasses the standard Home Assistant UI toggle system. The AddOn strictly enforces exposure rules based on local YAML configuration files (`alexa.yaml`, `google_assistant.yaml`), ensuring only whitelisted entities ever leave the local network.
 
 ## 🤝 Upstream Features (Homeway.io)
 

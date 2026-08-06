@@ -10,3 +10,7 @@ dist
 py2venv/*
 py3venv/*
 .claude
+
+# Volume dati del container standalone: contiene token HA e chiave privata del plugin
+data/
+data-*/

@@ -1,0 +1,417 @@
+import os
+import logging
+import traceback
+from typing import Any, Dict, List, Optional
+
+from sweetlink.mdns import MDns
+from sweetlink.sentry import Sentry
+from sweetlink.hostcommon import HostCommon
+from sweetlink.telemetry import Telemetry
+from sweetlink.pingpong import PingPong
+from sweetlink.sweetlinkcore import Sweetlink
+from sweetlink.localip import LocalIpHelper
+from sweetlink.httprequest import HttpRequest
+from sweetlink.compression import Compression
+from sweetlink.httpsessions import HttpSessions
+from sweetlink.Proto.AddonTypes import AddonTypes
+from sweetlink.commandhandler import CommandHandler
+from sweetlink.customfileserver import CustomFileServer
+from sweetlink.interfaces import IStateChangeHandler
+
+from .config import Config
+from .secrets import Secrets
+from .version import Version
+from .logger import LoggerInit
+from .webserver import WebServer
+from .webrequestresponsehandler import WebRequestResponseHandler
+from .ha.configmanager import ConfigManager
+from .ha.webrtcmanager import WebRtcManager
+from .ha.connection import Connection
+from .ha.eventhandler import EventHandler
+from .ha.serverinfo import ServerInfo
+from .ha.serverdiscovery import ServerDiscovery
+from .ha.homecontext import HomeContext
+from .ha.trackerinterceptor import TrackerInterceptor
+from .sage.sagehost import SageHost
+from .cloud_worker import CloudWorkerInstance
+from .cloudflaremanager import CloudflareManager
+
+
+# This file is the main host for the linux service.
+class LinuxHost(IStateChangeHandler):
+
+    def __init__(self, addonDataRootDir:str, logsDir:str, addonType:int, devConfig:Optional[Dict[str,Any]]) -> None:
+        # When we create our class, make sure all of our core requirements are created.
+        self.Secrets:Secrets = None #pyright: ignore[reportAttributeAccessIssue]
+        self.WebServer:WebServer = None #pyright: ignore[reportAttributeAccessIssue]
+        self.HaEventHandler:EventHandler = None #pyright: ignore[reportAttributeAccessIssue]
+        self.Sage:SageHost = None #pyright: ignore[reportAttributeAccessIssue]
+        self.WebRtcManager:WebRtcManager = None #pyright: ignore[reportAttributeAccessIssue]
+
+        # Indicates if we are running as the Home Assistant addon, or standalone docker or cli.
+        self.AddonType = addonType
+
+        try:
+            # First, we need to load our config.
+            # Note that the config MUST BE WRITTEN into this folder, that's where the setup installer is going to look for it.
+            # If this fails, it will throw.
+            self.Config = Config(addonDataRootDir)
+
+            # Next, setup the logger.
+            logLevelOverride_CanBeNone = self.GetDevConfigStr(devConfig, "LogLevel")
+            self.Logger = LoggerInit.GetLogger(self.Config, logsDir, logLevelOverride_CanBeNone)
+            self.Config.SetLogger(self.Logger)
+
+            # Give Sentry the logger ASAP, since it's used for exceptions.
+            Sentry.SetLogger(self.Logger)
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            print("Failed to init Linux Host! "+str(e) + "; "+str(tb))
+            # Raise the exception so we don't continue.
+            raise
+
+
+    def RunBlocking(self, storageDir:str, versionFileDir:str, devConfig:Optional[Dict[str,Any]]):
+        # Do all of this in a try catch, so we can log any issues before exiting
+        try:
+            self.Logger.info("Sweetplace addon starting...")
+
+            # Find the version of the plugin, this is required and it will throw if it fails.
+            pluginVersionStr = Version.GetPluginVersion(versionFileDir)
+            self.Logger.info("Plugin Version: %s", pluginVersionStr)
+
+            # Setup the HttpSession cache early, so it can be used whenever
+            HttpSessions.Init(self.Logger)
+
+            # Setup Sentry as soon as we know the plugin version.
+            addonTypeStr = "HomeAssistantAddon"
+            if self.AddonType is AddonTypes.StandaloneDocker:
+                addonTypeStr = "StandaloneDocker"
+            elif self.AddonType is AddonTypes.StandaloneCli:
+                addonTypeStr = "StandaloneCli"
+            self.Logger.info("Plugin Type: %s", addonTypeStr)
+            Sentry.Setup(pluginVersionStr, addonTypeStr, devConfig is not None)
+
+            self.Secrets = Secrets(self.Logger, storageDir)
+
+            # ====== SWEETPLACE FACTORY RESET ======
+            try:
+                from .ha.options import Options
+                wipe_flag = Options.GetOption("FACTORY_RESET_CLEAR_DATA", "false")
+                if str(wipe_flag).lower() == "true":
+                    old_id = self.GetPluginId()
+                    self.Logger.info("!!! SWEETPLACE FACTORY RESET REQUESTED !!!")
+                    self.Logger.info(f"Current Plugin ID before wipe: {old_id}")
+                    
+                    import shutil
+                    for filename in os.listdir(storageDir):
+                        if filename != "options.json":
+                            file_path = os.path.join(storageDir, filename)
+                            try:
+                                if os.path.isfile(file_path):
+                                    os.unlink(file_path)
+                                elif os.path.isdir(file_path):
+                                    shutil.rmtree(file_path)
+                            except Exception as e:
+                                self.Logger.error(f"Failed to delete {file_path}. Reason: {e}")
+                    
+                    # Verify destruction by creating a fresh empty Secrets instance
+                    self.Secrets = Secrets(self.Logger, storageDir)
+                    new_id = self.GetPluginId()
+                    self.Logger.info(f"Current Plugin ID after wipe: {new_id} (Should be None)")
+                    self.Logger.info("--------------------------------------------------------------------------")
+                    self.Logger.info("WIPE COMPLETE! The AddOn's cryptographic identity has been permanently erased.")
+                    self.Logger.info("1) Toggle OFF the 'FACTORY RESET' switch in the Home Assistant AddOn configuration.")
+                    self.Logger.info("2) Shut down the Raspberry Pi.")
+                    self.Logger.info("3) Clone your SD Card safely.")
+                    self.Logger.info("The AddOn is now halting purposely to prevent generation of a new ID...")
+                    self.Logger.info("--------------------------------------------------------------------------")
+                    import time
+                    while True:
+                        time.sleep(60)
+            except Exception as e:
+                self.Logger.error(f"Factory Reset Logic Failed: {e}")
+            # ======================================
+
+            # Now, detect if this is a new instance and we need to init our global vars. If so, the setup script will be waiting on this.
+            self.DoFirstTimeSetupIfNeeded()
+
+
+            # Get our required vars
+            pluginId = self.GetPluginId()
+            privateKey = self.GetPrivateKey()
+            if pluginId is None or privateKey is None:
+                raise Exception("Plugin ID or Private Key is None! This should never happen, please report this issue to the OctoEverywhere team.")
+
+            # Set the plugin id when we know it.
+            Sentry.SetAddonId(pluginId)
+
+            # Start the web server, which allows the user to interact with the plugin.
+            # We start it as early as possible so the user can load the web page ASAP.
+            # We always create the class, but only start the server for the in HA addon.
+            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig)
+            self.WebServer.Start(self.AddonType)
+
+            # Set if remote access is enabled from the config.
+            enableRemoteAccess = self.Config.GetBoolRequired(Config.HomeAssistantSection, Config.HaEnableRemoteAccess, True)
+            HttpRequest.SetRemoteAccessEnabled(enableRemoteAccess)
+            self.Logger.info("Remote Access Enabled: %s", str(enableRemoteAccess))
+
+            # Unpack any dev vars that might exist
+            devLocalHomewayServerAddress = self.GetDevConfigStr(devConfig, "LocalHomewayServerAddress")
+            if devLocalHomewayServerAddress is not None:
+                self.Logger.warning("~~~ Using Local Dev Server Address: %s ~~~", devLocalHomewayServerAddress)
+            # This is mostly just used to not allow the dev plugin to fallback to port 80
+            if self.GetDevConfigStr(devConfig, "HomeAssistantProxyPort") is not None:
+                portStr = self.GetDevConfigStr(devConfig, "HomeAssistantProxyPort")
+                if portStr is not None:
+                    HttpRequest.SetLocalHttpProxyPort(int(portStr))
+
+            # Init Sentry, but it won't report since we are in dev mode.
+            Telemetry.Init(self.Logger)
+            if devLocalHomewayServerAddress is not None:
+                Telemetry.SetServerProtocolAndDomain("http://"+devLocalHomewayServerAddress)
+
+            # Init compression
+            Compression.Init(self.Logger, storageDir)
+
+            # Init the mdns client
+            MDns.Init(self.Logger, storageDir)
+
+            # Setup the command handler
+            # This must be setup before the config manager.
+            CommandHandler.Init(self.Logger)
+
+            # Setup the custom file server
+            CustomFileServer.Init(self.Logger)
+
+            # Setup the Home Assistant config manager
+            configManager = ConfigManager(self.Logger)
+            self.WebServer.RegisterForAccountStatusUpdates()
+
+            # Use the discovery class to find the correct port for Home Assistant.
+            # For addons running in the Home Assistant docker ecosystem, this will return the optimal docker direct resolve hostnames and configs.
+            # For standalone plugin installs, the installer will get the port set correctly with the user's help.
+            serverDiscovery = ServerDiscovery(self.Logger, configManager)
+            result = serverDiscovery.GetHomeAssistantServerInfo(self.Config)
+
+            # Set the final ips, port, and access token.
+            self.Logger.info("Setting up Home Assistant connection to [%s:%s] https:%s", result.HostnameOrIp, str(result.Port), str(result.IsHttps))
+            HttpRequest.SetDirectServicePort(result.Port)
+            HttpRequest.SetDirectServiceAddress(result.HostnameOrIp)
+            HttpRequest.SetDirectServiceUseHttps(result.IsHttps)
+            ServerInfo.SetServerInfo(result.HostnameOrIp, result.Port, result.IsHttps, result.AccessToken)
+            # If this isn't running in the special Home Assistant addon mode, set the local IP override.
+            if result.IsSpecialHomeAssistantAddonMode is False:
+                LocalIpHelper.SetConnectionTargetIpOverride(result.HostnameOrIp)
+
+            # Init the ping pong helper.
+            PingPong.Init(self.Logger, storageDir, pluginId)
+            if devLocalHomewayServerAddress is not None:
+                PingPong.Get().DisablePrimaryOverride()
+
+            # Setup the web response handler
+            WebRequestResponseHandler.Init(self.Logger)
+
+            # Setup the HA state change handler
+            self.HaEventHandler = EventHandler(self.Logger, pluginId, devLocalHomewayServerAddress)
+
+            # Setup the HA connection object
+            haConnection = Connection(self.Logger, self.HaEventHandler)
+            haConnection.Start()
+            CommandHandler.Get().RegisterHomeAssistantWebsocketCon(haConnection)
+            self.HaEventHandler.RegisterHomeAssistantWebsocketCon(haConnection)
+
+            # Setup the Tracker Interceptor
+            self.TrackerInterceptorInstance = TrackerInterceptor(self.Logger, haConnection)
+            self.HaEventHandler.TrackerInterceptorCallback = self.TrackerInterceptorInstance.HandleEntityRegistryUpdate
+
+            # Set the ha connection object and try to update the config if needed.
+            configManager.SetHaConnection(haConnection)
+            configManager.UpdateConfigIfNeeded()
+
+            # Setup the WebRTC manager
+            self.WebRtcManager = WebRtcManager(self.Logger, pluginId, storageDir, self.Config, configManager)
+
+            # Setup and start the home context
+            homeContext = HomeContext(self.Logger, haConnection, self.HaEventHandler)
+            homeContext.Start()
+            CommandHandler.Get().RegisterHomeContext(homeContext)
+
+            # Setup the sage sub system, it won't be started until the primary connection is established.
+            sagePrefix = self.Config.GetStr(Config.SageSection, Config.SagePrefixStringKey, None)
+            self.Sage = SageHost(self.Logger, pluginVersionStr, homeContext, haConnection, sagePrefix, devLocalHomewayServerAddress)
+
+            # Now start the main runner!
+            
+            # --- SWEETPLACE CLOUD WORKER ---
+            privateKey = self.GetPrivateKey()
+            CloudWorkerInstance.Start(self.Logger, pluginId, privateKey, haConnection, storageDir)
+            
+            # --- SWEETPLACE CLOUDFLARE MANAGER ---
+            # Start the manager thread that requests the JWT Token and spawns cloudflared
+            # We pass the plugin_id so the backend can resolve the correct MAC/tunnel.
+            # Using uuid.getnode() was unreliable on multi-NIC devices (picked wrong MAC).
+            apiURLString = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+            baseApiUrl = apiURLString.rsplit('/device', 1)[0]
+            
+            self.CloudflareInstance = CloudflareManager(self.Logger)
+            self.CloudflareInstance.Start(baseApiUrl, plugin_id=pluginId)
+            
+            
+            pluginConnectUrl = HostCommon.GetPluginConnectionUrl()
+            if devLocalHomewayServerAddress is not None:
+                pluginConnectUrl = HostCommon.GetPluginConnectionUrl(fullHostString="ws://"+devLocalHomewayServerAddress)
+            oe = Sweetlink(pluginConnectUrl, pluginId, privateKey, self.Logger, self, pluginVersionStr, self.AddonType)
+            oe.RunBlocking()
+        except Exception as e:
+            Sentry.OnException("!! Exception thrown out of main host run function.", e)
+
+        # Allow the loggers to flush before we exit
+        try:
+            self.Logger.info("##################################")
+            self.Logger.info("#### Homeway Exiting ######")
+            self.Logger.info("##################################")
+            logging.shutdown()
+        except Exception as e:
+            print("Exception in logging.shutdown "+str(e))
+
+
+    # Ensures all required values are setup and valid before starting.
+    def DoFirstTimeSetupIfNeeded(self):
+        # Try to get the plugin id from the config.
+        pluginId = self.GetPluginId()
+        if HostCommon.IsPluginIdValid(pluginId) is False:
+            if pluginId is None:
+                self.Logger.info("No plugin id was found, generating one now!")
+            else:
+                self.Logger.info("An invalid pluginId id was found [%s], regenerating!", str(pluginId))
+
+            # Make a new, valid, key
+            pluginId = HostCommon.GeneratePluginId()
+
+            # Save it
+            self.Secrets.SetPluginId(pluginId)
+            self.Logger.info("New plugin id created: %s", pluginId)
+
+        privateKey = self.GetPrivateKey()
+        if HostCommon.IsPrivateKeyValid(privateKey) is False:
+            if privateKey is None:
+                self.Logger.info("No private key was found, generating one now!")
+            else:
+                self.Logger.info("An invalid private key was found [%s], regenerating!", str(privateKey))
+
+            # Make a new, valid, key
+            privateKey = HostCommon.GeneratePrivateKey()
+
+            # Save it
+            self.Secrets.SetPrivateKey(privateKey)
+            self.Logger.info("New private key created.")
+
+
+    # Returns None if no plugin id has been set.
+    def GetPluginId(self) -> Optional[str]:
+        return self.Secrets.GetPluginId()
+
+
+    # Returns None if no private id has been set.
+    def GetPrivateKey(self) -> Optional[str]:
+        return self.Secrets.GetPrivateKey()
+
+
+    # Tries to load a dev config option as a string.
+    # If not found or it fails, this return None
+    def GetDevConfigStr(self, devConfig:Optional[Dict[str, str]], value:str) -> Optional[str]:
+        if devConfig is None:
+            return None
+        if value in devConfig:
+            v = devConfig[value]
+            if v is not None and len(v) > 0 and v != "None":
+                return v
+        return None
+
+
+    # StatusChangeHandler Interface - Called by the Homeway logic when the server connection has been established.
+    #
+    def OnPrimaryConnectionEstablished(self, apiKey:str, connectedAccounts:List[str]) -> None:
+        self.Logger.info("Primary Connection To Homeway Established - We Are Ready To Go!")
+
+        # Ensure we have a valid plugin id
+        pluginId = self.GetPluginId()
+        if pluginId is None:
+            raise Exception("Plugin ID is None in OnPrimaryConnectionEstablished, this should never happen!")
+
+        privateKey = self.GetPrivateKey()
+
+        # --- SWEETPLACE ONBOARDING REPORTER ---
+        def _ReportToSweetplaceDB():
+            try:
+                import uuid, requests, json, os, time
+                
+                macs = []
+                # Hardware Physical MAC Scan (Filter out virtual Docker/VPN networks)
+                if os.path.exists('/sys/class/net/'):
+                    for interface in os.listdir('/sys/class/net/'):
+                        # Only target physical network interfaces
+                        if interface.startswith(('eth', 'wlan', 'en', 'wl')):
+                            mac_path = os.path.join('/sys/class/net/', interface, 'address')
+                            if os.path.exists(mac_path):
+                                try:
+                                    with open(mac_path, 'r') as f:
+                                        mac = f.read().strip().upper()
+                                        if len(mac) == 17:
+                                            macs.append(mac)
+                                except Exception: pass
+                
+                # Fallback to single MAC if hardware scan yields nothing
+                if not macs:
+                    mac_num = hex(uuid.getnode()).replace('0x', '').upper()
+                    macs.append(':'.join(mac_num[i : i + 2] for i in range(0, 11, 2)).zfill(17))
+
+                # Wait 5 seconds to ensure Homeway has registered our connection internally
+                time.sleep(5.0)
+                
+                # Submit an empty URL to let the cloud backend preserve any pre-configured custom tunnel domain (Zero-Touch AppURL)
+                app_url = ""
+                
+                # Check for explicit API or fallback to presumed production URL
+                api_url = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+                payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
+                
+                self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
+                requests.post(api_url, json=payload, timeout=10)
+            except Exception as e:
+                self.Logger.error(f"Sweetplace Onboarding Reporter failed: {e}")
+                
+        import threading
+        threading.Thread(target=_ReportToSweetplaceDB, daemon=True).start()
+        # --------------------------------------
+
+        # Set the current API key to the event handler
+        self.HaEventHandler.SetHomewayApiKey(apiKey)
+
+        # Once we have the API key, we can start or refresh the Sage system.
+        self.Sage.StartOrRefresh(pluginId, apiKey)
+
+        # Set the current API key to the custom file server
+        CustomFileServer.Get().UpdateAddonConfig(pluginId, apiKey)
+
+        # Let the WebRTC manager know the connection is established.
+        self.WebRtcManager.OnPrimaryConnectionEstablished(apiKey)
+
+        # Tell the web server if there's a connect user or not.
+        hasConnectedAccount = connectedAccounts is not None and len(connectedAccounts) > 0
+        self.WebServer.OnPrimaryConnectionEstablished(hasConnectedAccount)
+
+        # Check if this plugin is unlinked, if so add a message to the log to help the user setup the plugin if desired.
+        # This would be if the skipped the plugin link or missed it in the setup script.
+        if hasConnectedAccount is False:
+            self.Logger.info("Addon Hardware ID: %s", pluginId)
+
+
+    #
+    # StatusChangeHandler Interface - Called by the Homeway logic when a plugin update is required for this client.
+    #
+    def OnPluginUpdateRequired(self):
+        self.Logger.error("!!! A Plugin Update Is Required -- If This Plugin Isn't Updated It Might Stop Working !!!")

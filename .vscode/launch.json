@@ -5,42 +5,28 @@
             "name": "Linux Host",
             "type": "debugpy",
             "request": "launch",
-            "module": "homeway_linuxhost",
-            "python": "/home/pi/.homeway-env/bin/python",
-            "cwd": "${fileWorkspaceFolder}/homeway",
+            "module": "sweetlink_linuxhost",
+            "python": "/home/pi/.sweetlink-env/bin/python",
+            "cwd": "${fileWorkspaceFolder}/addon",
             "justMyCode": false,
             "args": [
                 // The module requires these aregs to be passed. These are examples of a typical default setup.
                 // The string is a urlBase64 encoded string of json. We base64 encode it to prevent any issues with command line args.
                 //
-                // {"VersionFileDir":"/home/pi/homeway/homeway", "AddonDataRootDir":"/home/pi/.homeway-addon", "LogsDir":"/home/pi/.homeway-addon/logs", "StorageDir":"/home/pi/.homeway-addon/data", "IsRunningInHaAddonEnv":false }
-                "eyJWZXJzaW9uRmlsZURpciI6Ii9ob21lL3BpL2hvbWV3YXkvaG9tZXdheSIsICJBZGRvbkRhdGFSb290RGlyIjoiL2hvbWUvcGkvLmhvbWV3YXktYWRkb24iLCAiTG9nc0RpciI6Ii9ob21lL3BpLy5ob21ld2F5LWFkZG9uL2xvZ3MiLCAiU3RvcmFnZURpciI6Ii9ob21lL3BpLy5ob21ld2F5LWFkZG9uL2RhdGEiLCAiSXNSdW5uaW5nSW5IYUFkZG9uRW52IjpmYWxzZSB9",
+                // {"VersionFileDir":"/home/pi/sweetlink/addon", "AddonDataRootDir":"/home/pi/.sweetlink-addon", "LogsDir":"/home/pi/.sweetlink-addon/logs", "StorageDir":"/home/pi/.sweetlink-addon/data", "IsRunningInHaAddonEnv":false}
+                "eyJWZXJzaW9uRmlsZURpciI6Ii9ob21lL3BpL3N3ZWV0bGluay9hZGRvbiIsICJBZGRvbkRhdGFSb290RGlyIjoiL2hvbWUvcGkvLnN3ZWV0bGluay1hZGRvbiIsICJMb2dzRGlyIjoiL2hvbWUvcGkvLnN3ZWV0bGluay1hZGRvbi9sb2dzIiwgIlN0b3JhZ2VEaXIiOiIvaG9tZS9waS8uc3dlZXRsaW5rLWFkZG9uL2RhdGEiLCAiSXNSdW5uaW5nSW5IYUFkZG9uRW52IjpmYWxzZX0=",
                 //
                 // We can optionally pass a dev config json object, which has dev specific overwrites we can make.
                 "{\"LocalHomewayServerAddress\":  \"\"  , \"LogLevel\":\"DEBUG\", \"RunWebServer\": true }"
             ]
         },
         {
-            "name": "Installer Module",
-            "type": "debugpy",
-            "request": "launch",
-            "python": "~/.homeway-env/bin/python",
-            "module": "homeway_installer",
-            "justMyCode": false,
-            "args": [
-                // The module requires this json object to be passed.
-                // Normally the install.sh script runs, ensure everything is installed, creates a virtural env, and then runs this modlue giving it these args.
-                // But for debugging, we can skip that assuming it's already been ran.
-                "{\"HA_REPO_DIR\":\"/home/pi/homeway\",\"HA_ENV\":\"/home/pi/.homeway-env\",\"USERNAME\":\"pi\",\"USER_HOME\":\"/home/pi\",\"CMD_LINE_ARGS\":\"-debug -skipsudoactions\"}"
-            ]
-        },
-        {
             "name": "Linux Host - WSL",
             "type": "debugpy",
             "request": "launch",
-            "module": "homeway_linuxhost",
-            "python": "~/.homeway-env/bin/python",
-            "cwd": "${fileWorkspaceFolder}/homeway",
+            "module": "sweetlink_linuxhost",
+            "python": "~/.sweetlink-env/bin/python",
+            "cwd": "${fileWorkspaceFolder}/addon",
             "justMyCode": false,
             "args": [
                 // The module requires these aregs to be passed. These are examples of a typical default setup.
