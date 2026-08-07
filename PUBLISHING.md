@@ -37,6 +37,35 @@ non esiste una cartella pubblica dentro un repo privato, e viceversa.
 
 ## Come si pubblica
 
+**Automaticamente**, tramite `.github/workflows/publish-sweetlink.yaml` nel monorepo: a ogni
+push che tocca `sweetlink/` il workflow clona il repo pubblico, ne sostituisce il contenuto e
+committa, dopo aver verificato il bump di versione (vedi sotto).
+
+Non usa `git subtree push`: la split ricalcola i commit dalla storia del monorepo, quindi un
+rebase o un amend cambierebbe le SHA, la storia pubblicata divergerebbe e il push verrebbe
+rifiutato. Sostituire il contenuto e' invece sempre un fast-forward. Autenticazione gia' configurata tramite una deploy key SSH scrivibile installata su
+`sweetlink-addon`, con la chiave privata nel secret `SWEETLINK_DEPLOY_KEY` del monorepo: il
+`GITHUB_TOKEN` del monorepo non puo' scrivere su un altro repository.
+
+### Il guard-rail sul bump di versione
+
+Il workflow confronta l'**oggetto-albero** di `addon/` con quello gia' pubblicato:
+
+| Contenuto di `addon/` | `version:` | Esito |
+|---|---|---|
+| identico | qualsiasi | pubblica |
+| cambiato | incrementata | pubblica |
+| cambiato | **invariata** | **blocca** |
+
+Il motivo: il Supervisor decide se offrire un aggiornamento confrontando le stringhe di
+`version:`. Pubblicare codice nuovo senza bump lo rende invisibile agli hub, in silenzio.
+Per le modifiche che non toccano il funzionamento si puo' forzare, lanciando il workflow a
+mano con `force=true`.
+
+### A mano
+
+Dal monorepo, con il lavoro già committato:
+
 Dal monorepo, con il lavoro già committato:
 
 ```bash
@@ -102,3 +131,28 @@ dal proprietario, dalle impostazioni del repository.
 Issues, Pull Request, Wiki e Projects sono **disattivati**: dall'esterno il repository è in
 sola lettura e non accetta nessuna forma di contributo. Il branch `main` è protetto contro
 cancellazione e force-push.
+
+## Come l'aggiornamento arriva davvero sugli hub
+
+Pubblicare non basta. Verificato sul sorgente del Supervisor
+(`supervisor/misc/tasks.py`, `supervisor/apps/app.py`, `supervisor/apps/validate.py`):
+
+1. **Bump di `version:`** — e' il trigger. Senza, non succede nulla.
+2. **La CI del repo pubblico costruisce l'immagine** taggata con quella versione esatta.
+3. **Il Supervisor ricarica lo store** ogni **3 ore** (`RUN_RELOAD_APPS = 10800`).
+4. **Il Supervisor valuta l'aggiornamento** ogni **16 ore** (`RUN_UPDATE_APPS = 57600`), e
+   installa solo se tutte queste condizioni sono vere:
+   - `auto_update` e' attivo per quell'add-on. **Il default e' `False`** ed e'
+     un'impostazione **per installazione**: l'autore non puo' forzarla dal `config.yaml`.
+   - l'aggiornamento non attraversa una voce di `breaking_versions`, opzione dichiarabile
+     dall'autore in `config.yaml` per bloccare i salti delicati.
+   - la nuova versione e' pubblicata **da almeno 24 ore**: il Supervisor impone una
+     quarantena deliberata.
+
+Nel caso migliore passano quindi fra le **24 e le 40 ore** dalla pubblicazione.
+
+> ### Per il modello a immagine clonata
+> Gli hub nascono da un'immagine golden clonata su SD. **Attivare `auto_update` sull'add-on
+> nell'immagine golden prima di clonarla**: ogni hub spedito lo eredita gia' attivo. E' una
+> spunta sola che copre tutto il parco futuro. Senza, ogni hub resterebbe fermo alla versione
+> installata finche' qualcuno non aggiorna a mano dalla UI.
