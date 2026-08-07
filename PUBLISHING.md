@@ -43,9 +43,9 @@ committa, dopo aver verificato il bump di versione (vedi sotto).
 
 Non usa `git subtree push`: la split ricalcola i commit dalla storia del monorepo, quindi un
 rebase o un amend cambierebbe le SHA, la storia pubblicata divergerebbe e il push verrebbe
-rifiutato. Sostituire il contenuto e' invece sempre un fast-forward. Autenticazione gia' configurata tramite una deploy key SSH scrivibile installata su
-`sweetlink-addon`, con la chiave privata nel secret `SWEETLINK_DEPLOY_KEY` del monorepo: il
-`GITHUB_TOKEN` del monorepo non puo' scrivere su un altro repository.
+rifiutato. Sostituire il contenuto e' invece sempre un fast-forward. Richiede il secret `SWEETLINK_PUBLISH_TOKEN` nel monorepo: il `GITHUB_TOKEN` non puo'
+scrivere su un altro repository. Consigliato un PAT fine-grained ristretto al solo
+`sweetlink-addon` con permesso *Contents: Read and write*.
 
 ### Il guard-rail sul bump di versione
 
