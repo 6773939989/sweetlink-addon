@@ -32,6 +32,7 @@ jobs:
   version:
     name: Legge la versione dichiarata
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
@@ -64,6 +65,8 @@ jobs:
     name: Build ${{ matrix.arch }}
     needs: version
     runs-on: ubuntu-latest
+    # senza questo, una build impiantata occupa il runner fino al limite di 6 ore
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
