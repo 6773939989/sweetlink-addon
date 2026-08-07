@@ -142,16 +142,12 @@ jobs:
             echo "${{ env.IMAGE_BASE }}/amd64:$v"
             echo '```'
             echo
-            echo "### Al primo rilascio, una volta sola"
+            echo "Pubblicate da un repository pubblico con il GITHUB_TOKEN, quindi gia'"
+            echo "scaricabili in anonimo: nessuna azione manuale sulla visibilita'."
             echo
-            echo "I package su GHCR nascono **privati**. Il Supervisor di Home Assistant li scarica"
-            echo "in anonimo, quindi finche' restano privati l'installazione fallisce con un errore"
-            echo "di autenticazione poco leggibile."
+            echo "### Promemoria per il prossimo rilascio"
             echo
-            echo "Vai su https://github.com/6773939989?tab=packages , apri ciascun package →"
-            echo "Package settings → Change visibility → **Public**."
-            echo
-            echo "### Poi"
-            echo
-            echo "Scommenta la riga \`image:\` in \`addon/config.yaml\` **nel monorepo**, non qui."
+            echo "\`image:\` in \`addon/config.yaml\` e' attiva e punta al tag \`version:\`."
+            echo "Home Assistant non compila piu' nulla sull'hub: se cambi il codice senza"
+            echo "incrementare \`version:\`, gli hub continuano a usare la vecchia immagine."
           } >> "$GITHUB_STEP_SUMMARY"

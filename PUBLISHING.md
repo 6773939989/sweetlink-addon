@@ -87,9 +87,12 @@ sono i due requisiti strutturali di Home Assistant.
 - **Scommentata senza che l'immagine esista**: il Supervisor tenta il pull, non trova nulla, e
   **l'installazione fallisce**.
 
-Va scommentata **nello stesso commit** che introduce la CI che pubblica l'immagine, mai prima.
-Il package su GHCR nasce **privato**: va reso pubblico esplicitamente, altrimenti il Supervisor,
-che scarica in anonimo, riceve un errore di autenticazione poco leggibile.
+Va scommentata solo **dopo** che la CI ha pubblicato un'immagine per la versione dichiarata,
+mai prima.
+
+Sulla visibilita' del package non serve fare niente: pubblicando da un repository pubblico con
+il `GITHUB_TOKEN`, il package su GHCR eredita la visibilita' del repository ed e' scaricabile
+in anonimo. Verificato con un pull anonimo delle immagini 2.7.41, che risponde `HTTP 200`.
 
 ## Accessi al repository pubblico
 
