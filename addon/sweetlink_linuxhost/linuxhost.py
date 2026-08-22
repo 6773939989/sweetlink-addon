@@ -242,6 +242,10 @@ class LinuxHost(IStateChangeHandler):
                 self.Logger.error(f"Factory Reset Logic Failed: {e}")
             # ======================================
 
+            # Prima di usare l'identita', verifica che appartenga a questo apparecchio: se
+            # l'immagine e' stata clonata, la cancella qui e la riga sotto ne genera una nuova.
+            self.EnforceHardwareBondIfNeeded()
+
             # Now, detect if this is a new instance and we need to init our global vars. If so, the setup script will be waiting on this.
             self.DoFirstTimeSetupIfNeeded()
 
@@ -397,6 +401,11 @@ class LinuxHost(IStateChangeHandler):
                     # sopra resterebbe una promessa del commento invece di un comportamento.
                     RIPETIZIONE_SEC = 6 * 60 * 60
                     RITENTATIVO_SEC = 60
+                    # Tetto ai rifacimenti dell'identita': se dopo qualche tentativo il backend
+                    # continua a vedere una collisione il problema non e' l'identita', ed e'
+                    # meglio fermarsi che generare identita' nuove all'infinito.
+                    MAX_RIGENERAZIONI = 3
+                    rigenerazioni = 0
                     while True:
                         attesaSec = RITENTATIVO_SEC
                         try:
@@ -414,7 +423,11 @@ class LinuxHost(IStateChangeHandler):
                                 macs = [fallback]
 
                             self.ReportedMacs = macs
-                            payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
+                            # Rilette a ogni giro: se il backend segnala una collisione le
+                            # rigeneriamo, e il giro successivo deve usare quelle nuove.
+                            currentPluginId = self.GetPluginId()
+                            currentPrivateKey = self.GetPrivateKey()
+                            payload = {"macs": macs, "plugin_id": currentPluginId, "app_url": app_url, "private_key": currentPrivateKey}
                             self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
 
                             response = requests.post(api_url, json=payload, timeout=10)
@@ -434,6 +447,22 @@ class LinuxHost(IStateChangeHandler):
                                 attesaSec = RIPETIZIONE_SEC
                             elif response.ok:
                                 self.Logger.error(f"Sweetplace Onboarding: {api_url} ha risposto HTTP {response.status_code} ma senza conferma di registrazione. Controllare che SWEETPLACE_ONBOARD_API punti a /device/ping.")
+                            elif response.status_code == 409 and rigenerazioni < MAX_RIGENERAZIONI:
+                                # Il backend ha riconosciuto che questa identita' appartiene gia'
+                                # a un altro apparecchio: l'immagine e' stata clonata e il sigillo
+                                # hardware non se n'e' accorto. Il server e' l'unico che puo'
+                                # saperlo con certezza, perche' e' l'unico che li vede tutti.
+                                rigenerazioni += 1
+                                self.Logger.error("Sweetplace Onboarding: il backend segnala che questa identita' appartiene gia' a un altro apparecchio. La rigenero e riprovo.")
+                                self.Secrets.SetPluginId(None)
+                                self.Secrets.SetPrivateKey(None)
+                                self.DoFirstTimeSetupIfNeeded()
+                                self.Secrets.SetBoundMacs(macs)
+                                # Senza attesa: la nuova identita' non puo' collidere di nuovo.
+                                continue
+                            elif response.status_code == 409:
+                                self.Logger.error(f"Sweetplace Onboarding: identita' ancora in collisione dopo {MAX_RIGENERAZIONI} tentativi di rigenerazione. Mi fermo per non ciclare.")
+                                return
                             elif response.status_code == 400:
                                 # L'unico 4xx che il backend produce per un payload sbagliato
                                 # (index.ts:136-138). Ritentarlo identico non puo' funzionare.
@@ -485,6 +514,77 @@ class LinuxHost(IStateChangeHandler):
 
 
     # Ensures all required values are setup and valid before starting.
+    # Verifica che l'identita' salvata appartenga a QUESTO apparecchio, e la rigenera se no.
+    #
+    # plugin_id e private_key nascono al primo avvio e finiscono dentro l'immagine della scheda
+    # SD. Se quell'immagine viene clonata su altri hub senza azzerarli, tutti si presentano al
+    # backend con la stessa identita' e con la stessa chiave privata.
+    #
+    # Il danno non e' che manchi qualche registrazione: /device/ping fa upsert per MAC, quindi
+    # ogni clone si registra regolarmente. Il danno e' che il backend usa plugin_id per decidere
+    # la proprieta': /device/verify propaga claim_status, email e session_token a TUTTE le righe
+    # con lo stesso plugin_id, e /api/cloudflare/provision propaga tunnel e URL pubblico allo
+    # stesso modo. Con due cloni, il primo cliente che rivendica il proprio hub si prende anche
+    # l'altro e ne condivide il token di sessione.
+    #
+    # La procedura di azzeramento manuale esiste gia', ma dipende da chi prepara le schede, e
+    # basta un avvio di troppo prima della clonazione per vanificarla.
+    #
+    # Qui il rimedio non chiede disciplina a nessuno: l'identita' viene legata agli indirizzi
+    # hardware visti sull'apparecchio, che sono l'unica cosa che NON si copia con l'immagine.
+    # Se al riavvio nessuno di quegli indirizzi e' piu' presente, l'immagine sta girando su un
+    # altro apparecchio e l'identita' va rifatta.
+    #
+    # Due regole di prudenza, perche' un falso positivo qui costa la registrazione dell'hub:
+    #  - se non si legge nessun indirizzo permanente non si conclude nulla. L'assenza di prove
+    #    non e' una prova.
+    #  - quando l'apparecchio e' riconosciuto, il vincolo viene ALLARGATO agli indirizzi visti
+    #    adesso invece di essere sostituito. Cosi' sostituzioni graduali dell'hardware (oggi si
+    #    aggiunge un dongle, domani si guasta la scheda di bordo) non arrivano mai al punto in
+    #    cui non resta piu' niente in comune.
+    def EnforceHardwareBondIfNeeded(self) -> None:
+        try:
+            self._EnforceHardwareBondIfNeeded()
+        except Exception as e:
+            # Deve fallire in apertura: questo e' un controllo di sicurezza, non un requisito
+            # di avvio. Se /data e' pieno o in sola lettura la scrittura del vincolo lancia, e
+            # senza questa rete l'add-on non partirebbe per un guasto che prima era invisibile.
+            self.Logger.error(f"Hardware bond: controllo non riuscito, proseguo comunque. {e}")
+
+
+    def _EnforceHardwareBondIfNeeded(self) -> None:
+        currentMacs = LinuxHost.GetHardwareMacs()
+        if len(currentMacs) == 0:
+            self.Logger.warning("Hardware bond: nessun indirizzo di rete permanente leggibile, controllo saltato.")
+            return
+
+        boundMacs = self.Secrets.GetBoundMacs()
+
+        # Nessun vincolo salvato: primo avvio del dispositivo, oppure identita' creata da una
+        # versione dell'add-on precedente a questo meccanismo. In entrambi i casi si lega e basta.
+        if len(boundMacs) == 0:
+            if self.GetPluginId() is not None:
+                self.Logger.info("Hardware bond: identita' esistente senza vincolo, la lego a questo apparecchio.")
+            self.Secrets.SetBoundMacs(currentMacs)
+            return
+
+        if len(set(boundMacs) & set(currentMacs)) > 0:
+            allargato = sorted(set(boundMacs) | set(currentMacs))
+            if allargato != boundMacs:
+                self.Logger.info("Hardware bond: nuovo indirizzo di rete su questo apparecchio, vincolo aggiornato.")
+                self.Secrets.SetBoundMacs(allargato)
+            return
+
+        # Nessuna corrispondenza: questa identita' e' nata su un altro apparecchio.
+        self.Logger.error("Hardware bond: l'identita' salvata appartiene a un altro apparecchio. Attesi %s, presenti %s. La rigenero.",
+                            ",".join(boundMacs), ",".join(currentMacs))
+        self.Secrets.SetPluginId(None)
+        self.Secrets.SetPrivateKey(None)
+        # Il vincolo viene SOSTITUITO, non allargato: gli indirizzi dell'apparecchio di origine
+        # non hanno piu' niente a che fare con questo.
+        self.Secrets.SetBoundMacs(currentMacs)
+
+
     def DoFirstTimeSetupIfNeeded(self):
         # Try to get the plugin id from the config.
         pluginId = self.GetPluginId()

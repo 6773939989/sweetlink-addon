@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.46
+
+- 🔐 L'identità dell'hub è ora legata all'apparecchio su cui è nata: se l'immagine della scheda viene clonata su un altro dispositivo, il clone se ne accorge al primo avvio e si rigenera identità e chiave da solo.
+
 ## 2.7.45
 
 - 🌐 Il pannello mostra l'indirizzo pubblico con cui l'hub è raggiungibile da Internet, accanto all'identificativo hardware.

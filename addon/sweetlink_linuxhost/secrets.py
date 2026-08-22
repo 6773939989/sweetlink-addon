@@ -3,7 +3,7 @@ import threading
 import logging
 
 import configparser
-from typing import Optional
+from typing import List, Optional
 
 # This class is very similar to the config class, but since the config files are often backup
 # in public places, the secrets are stored else where.
@@ -16,6 +16,9 @@ class Secrets:
     SecretsSection = "secrets"
     PluginIdKey = "plugin_id"
     PrivateKeyKey = "private_key"
+    # Gli indirizzi hardware visti su questo apparecchio. Legano l'identita' qui sopra al ferro
+    # su cui e' nata: sono l'unica cosa che non si copia insieme all'immagine della scheda SD.
+    BoundMacsKey = "bound_macs"
 
 
     # This allows us to add comments into our config.
@@ -24,6 +27,7 @@ class Secrets:
     c_SecretsConfigComments = [
         { "Target": PluginIdKey,  "Comment": "Uniquely identifies your addon. Don't change or will have to re-link your addon with the service."},
         { "Target": PrivateKeyKey, "Comment": "A private key linked to your addon ID. NEVER share this and also don't change it."},
+        { "Target": BoundMacsKey, "Comment": "Hardware addresses this identity belongs to. If none of them is present at boot, the identity was cloned onto another device and gets regenerated."},
     ]
 
 
@@ -59,6 +63,24 @@ class Secrets:
     # Sets the plugin id and saves the file.
     def SetPrivateKey(self, privateKey:Optional[str]) -> None:
         self._SetStr(Secrets.SecretsSection, Secrets.PrivateKeyKey, privateKey)
+
+
+    # Restituisce gli indirizzi hardware a cui questa identita' e' legata.
+    # Lista vuota se il vincolo non e' mai stato scritto.
+    def GetBoundMacs(self) -> List[str]:
+        raw = self._GetStr(Secrets.SecretsSection, Secrets.BoundMacsKey)
+        if raw is None:
+            return []
+        return sorted({m.strip().upper() for m in raw.split(",") if len(m.strip()) > 0})
+
+
+    # Salva gli indirizzi hardware a cui legare questa identita'.
+    def SetBoundMacs(self, macs:List[str]) -> None:
+        cleaned = sorted({m.strip().upper() for m in macs if len(m.strip()) > 0})
+        if len(cleaned) == 0:
+            self._SetStr(Secrets.SecretsSection, Secrets.BoundMacsKey, None)
+            return
+        self._SetStr(Secrets.SecretsSection, Secrets.BoundMacsKey, ",".join(cleaned))
 
 
     # Gets a value from the config given the header and key.
