@@ -69,8 +69,6 @@ class HttpRequest:
     def SetRemoteAccessEnabled(enabled:bool):
         HttpRequest.RemoteAccessEnabled = enabled
     @staticmethod
-    def GetRemoteAccessEnabled() -> bool  :
-        return HttpRequest.RemoteAccessEnabled
 
     # Based on the URL passed, this will return PathTypes.Relative or PathTypes.Absolute
     @staticmethod

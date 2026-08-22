@@ -1,5 +1,4 @@
 import os
-import json
 import time
 import logging
 import threading
@@ -10,7 +9,6 @@ from typing import Any, Dict, Optional
 from sweetlink.commandhandler import CommandHandler
 from sweetlink.interfaces import IAccountLinkStatusUpdateHandler
 from sweetlink.sentry import Sentry
-from sweetlink.httprequest import HttpRequest
 from sweetlink.Proto.AddonTypes import AddonTypes
 
 from .config import Config
@@ -126,45 +124,12 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 self.end_headers()
                 return
 
-            # Handle the request.
-            try:
-                # Handle by path
-                pathLower = self.path.lower()
-                if pathLower == "/api/remote_access_enabled":
-                    # Read the post data.
-                    enabled = None
-                    try:
-                        contentLength = int(self.headers['Content-Length'])
-                        postData = self.rfile.read(contentLength)
-                        jsonData = json.loads(postData)
-                        enabled = jsonData.get("enabled", None)
-                        if enabled is None:
-                            raise Exception("Missing enabled field")
-                        enabled = bool(enabled)
-                    except Exception as e:
-                        WebServer.Instance.Logger.error("Failed to parse remote access enabled post data. "+str(e))
-                        self.send_response(400)
-                        self.end_headers()
-                        return
-
-                    # Update the remote access enabled setting.
-                    WebServer.Instance.Logger.info(f"Setting remote access enabled via API to: {str(enabled)}")
-                    HttpRequest.SetRemoteAccessEnabled(enabled)
-                    WebServer.Instance.Config.SetBool(Config.HomeAssistantSection, Config.HaEnableRemoteAccess, enabled)
-
-                    # Return success.
-                    self.send_response(200)
-                    self.end_headers()
-                    return
-                # If we get here, the path isn't found.
-                self.send_response(404)
-                self.end_headers()
-
-            except Exception as e:
-                WebServer.Instance.Logger.error("Webserver POST exception: "+str(e))
-                self.send_response(500)
-                self.end_headers()
-                return
+            # Il pannello non espone piu' nessuna azione che scriva sul server: l'unica rotta
+            # POST che esisteva serviva all'interruttore dell'accesso remoto, ora rimosso.
+            # L'accesso remoto resta governato dall'opzione di configurazione, letta all'avvio
+            # in linuxhost.py.
+            self.send_response(404)
+            self.end_headers()
 
 
         def do_GET(self):
