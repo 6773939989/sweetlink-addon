@@ -1,9 +1,15 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.43
+
+- 🧹 Rimossi i riferimenti e i servizi non utilizzati ereditati dal progetto di origine: l'assistente vocale Sage e l'iniezione di script nel frontend di Home Assistant, che contattava un servizio esterno dal browser.
+- 🎛️ Pannello dell'add-on ridisegnato: stato dell'hub, identificativo hardware e un pulsante che apre direttamente la configurazione Sweetplace con il dispositivo già riconosciuto.
+- 🔌 Rimossa la porta 11027, che serviva solo all'assistente vocale rimosso.
+
 ## 2.7.42
 
-- 🔗 La registrazione dell'hub sul cloud Sweetplace non attende più la connessione a Homeway: parte all'avvio dell'add-on, usando solo dati generati sul dispositivo.
+- 🔗 La registrazione dell'hub sul cloud Sweetplace parte all'avvio dell'add-on e non dipende più da servizi esterni: usa solo dati generati sul dispositivo.
 - 🔁 Se la rete o il backend non sono ancora pronti all'avvio, la registrazione viene ritentata ogni minuto finché non riesce, e da lì in poi viene rinfrescata ogni 6 ore.
 - ✅ L'esito della registrazione viene letto dalla risposta del backend e non più dal solo codice HTTP, così un endpoint configurato male non passa più per riuscito.
 - 🛠️ Corretto il provisioning del tunnel Cloudflare, che al primo avvio di un dispositivo nuovo falliva e veniva ritentato all'infinito senza mai emettere il tunnel.

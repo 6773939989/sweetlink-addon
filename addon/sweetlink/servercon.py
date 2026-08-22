@@ -145,7 +145,7 @@ class ServerCon(IStream):
 
 
     def OnOpened(self, ws:IWebSocketClient) -> None:
-        self.Logger.info("Connected To Homeway, server con "+self.GetConnectionString()+". Starting handshake...")
+        self.Logger.info("Connected To Sweetplace, server con "+self.GetConnectionString()+". Starting handshake...")
 
         # On success make the lowest latency endpoint possible again, since we successfully connected to it or the primary.
         # And we note that we have connected.
@@ -173,7 +173,7 @@ class ServerCon(IStream):
         if self.IsWsConnecting:
             self.TempDisableLowestLatencyEndpoint = True
             self.Logger.info("Blocking lowest latency endpoint, since we failed while the WS connect was happening.")
-        self.Logger.error("Homeway Ws error: " +str(err))
+        self.Logger.error("Sweetplace Ws error: " +str(err))
 
 
     def OnData(self, ws:IWebSocketClient, msg:Buffer, opCode:WebSocketOpCode) -> None:
@@ -204,7 +204,7 @@ class ServerCon(IStream):
             self.Logger.info("Got a handshake complete for an old session, "+str(sessionId)+", ignoring.")
             return
 
-        self.Logger.info("Handshake complete, server con "+self.GetConnectionString()+", successfully connected to Homeway!")
+        self.Logger.info("Handshake complete, server con "+self.GetConnectionString()+", successfully connected to Sweetplace!")
 
         # Only primary connections have this handler.
         if self.StatusChangeHandler is not None:
@@ -356,11 +356,11 @@ class ServerCon(IStream):
                     # Connect to the service.
                     self.Ws = Client(endpoint, onWsOpen=self.OnOpened, onWsData=self.OnData, onWsClose=self.OnClosed, onWsError=self.OnError)
                     with self.Ws:
-                        self.Logger.info("Attempting to talk to Homeway, server con "+self.GetConnectionString() + " wsId:"+self.GetWsId(self.Ws))
+                        self.Logger.info("Attempting to talk to Sweetplace, server con "+self.GetConnectionString() + " wsId:"+self.GetWsId(self.Ws))
                         self.Ws.RunUntilClosed()
 
                     # Handle disconnects
-                    self.Logger.info("Disconnected from Homeway, server con "+self.GetConnectionString())
+                    self.Logger.info("Disconnected from Sweetplace, server con "+self.GetConnectionString())
 
                     # Ensure all proxy sockets are closed.
                     if self.Session:
@@ -368,7 +368,7 @@ class ServerCon(IStream):
 
                 except Exception as e:
                     self.TempDisableLowestLatencyEndpoint = True
-                    Sentry.OnException("Exception in Homeway's main RunBlocking function. server con:"+self.GetConnectionString()+".", e)
+                    Sentry.OnException("Exception in Sweetplace's main RunBlocking function. server con:"+self.GetConnectionString()+".", e)
                     time.sleep(20)
 
                 # On each disconnect, check if the RunFor time is now done.

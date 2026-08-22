@@ -1,13 +1,11 @@
 ## [Sweetplace.me](https://sweetplace.me/?source=addon_readme)
 
-**🎉 [Introducing Sage AI](https://sweetplace.me/sage-ai?source=addon_readme_sage_intro) 🎉** - **Free AI Assist for Home Assistant and Home Assistant Voice Devices.** Powered by OpenAI’s ChatGPT, Anthropic’s Claud, or Google’s Gemini – Sage enables lifelike voice and communication with Home Assistant Assist to execute home actions, look up information, check the weather, and more. Sage offers personality customization and over 56 voices.
 
 Sweetplace is a Home Assistant community project aiming to provide free, private, and secure cloud tools for the entire Home Assistant community.
 
 ## Features
 
 - 🚀 **Free.** Remote access to your full Home Assistant from anywhere.
-- 🌿 **Intelligent.** [Sage AI](https://sweetplace.me/sage-ai?source=addon_readme) enables lifelike interactions with Home Assistant Assist or Home Assistant Voice devices.
 - 🤖 **Helpful.** [Alexa](https://sweetplace.me/alexa?source=addon_readme) and [Google Assistant](https://sweetplace.me/googleassistant?source=addon_readme) voice control for your Home Assistant.
 - 📱 **Mobile.** Free remote access for the Official [Home Assistant Android and iOS apps](https://sweetplace.me/app?source=addon_readme)
 - 📺 **Streamable.** Free [WebRTC camera streaming](https://blog.sweetplace.me/free-webrtc-video-streaming-for-home-assistant/) including both STUN and TURN server access.

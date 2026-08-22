@@ -28,7 +28,7 @@ class Client(IWebSocketClient):
     #
     # To test the current size, we adjusted this buffer size and the delay we sleep before checking again using a large download file directly on our hardwired klipper printer.
     # At 10MB and 100ms delay, it was only impacted by a very small amount, from about 240mbps to 230mbps.
-    # For Homeway, we set this to 20mb.
+    # For Sweetplace, we set this to 20mb.
     c_MaxSendQueueSizeBytes = 20 * 1024 * 1024
     c_SocketSendBufferBytes = 512 * 1024
     c_SocketReceiveBufferBytes = 512 * 1024

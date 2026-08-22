@@ -16,7 +16,6 @@ from ..buffer import Buffer, BufferOrNone
 from ..httprequest import HttpRequest
 from ..streammsgbuilder import StreamMsgBuilder
 from ..commandhandler import CommandHandler
-from ..customfileserver import CustomFileServer
 from ..compression import Compression, CompressionContext
 from ..sentry import Sentry
 from ..compat import Compat
@@ -194,13 +193,10 @@ class WebStreamHttpHelper:
         # 3) Finally, check if the request is cached in Slipstream.
         hwHttpResult:HttpResultOrNone = None
         isFromCache = False
-        # If this is a special command for Homeway, we handle it differently.
+        # If this is a special command for Sweetplace, we handle it differently.
         if CommandHandler.Get().IsCommandRequest(httpInitialContext):
             # This HandleRequest wil return a valid httpResult, with a full result.
             hwHttpResult = CommandHandler.Get().HandleCommand(httpInitialContext, self.UploadBuffer)
-        elif CustomFileServer.Get().IsCustomFileRequest(httpInitialContext, method):
-            # This HandleRequest wil return a valid httpResult, with a full result.
-            hwHttpResult = CustomFileServer.Get().HandleRequest(httpInitialContext)
         else:
             # If we don't have a valid result yet, do the normal http path.
             hwHttpResult = HttpRequest.MakeHttpCallStreamHelper(self.Logger, httpInitialContext, method, sendHeaders, self.UploadBuffer)

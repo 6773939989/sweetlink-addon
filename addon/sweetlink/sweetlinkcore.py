@@ -54,11 +54,11 @@ class Sweetlink(IHost):
                 #msg = str(e)
                 #if "can't start new thread" in msg:
                 ThreadDebug.DoThreadDumpLogout(self.Logger)
-                Sentry.OnException("RuntimeError in Homeway's main RunBlocking function.", e)
+                Sentry.OnException("RuntimeError in Sweetplace's main RunBlocking function.", e)
                 # Sleep for a long time, since this can't be recovered from easily.
                 time.sleep(60 * 60 * 2)
             except Exception as e:
-                Sentry.OnException("Exception in Homeway's main RunBlocking function.", e)
+                Sentry.OnException("Exception in Sweetplace's main RunBlocking function.", e)
                 # Sleep for just a bit and try again.
                 time.sleep(5)
 

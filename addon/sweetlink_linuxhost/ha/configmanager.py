@@ -123,7 +123,7 @@ class ConfigManager(IConfigManager):
         return None
 
 
-    # Adds the Homeway required config settings if needed.
+    # Adds the Sweetplace required config settings if needed.
     def UpdateConfigIfNeeded(self) -> None:
         try:
             # Ensure we can find the config file.
@@ -232,7 +232,7 @@ class ConfigManager(IConfigManager):
             # If safest to just append it to the end of the file.
             with open(configFilePath, 'a', encoding="utf-8") as f:
                 f.writelines(lineEnding)
-                f.writelines("# Added By Homeway to enable proper HTTP proxy support."+lineEnding)
+                f.writelines("# Added By Sweetplace to enable proper HTTP proxy support."+lineEnding)
                 f.writelines("http:"+lineEnding)
                 f.writelines("  use_x_forwarded_for: true"+lineEnding)
                 f.writelines("  trusted_proxies:"+lineEnding)

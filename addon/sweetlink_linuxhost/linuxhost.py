@@ -15,7 +15,6 @@ from sweetlink.compression import Compression
 from sweetlink.httpsessions import HttpSessions
 from sweetlink.Proto.AddonTypes import AddonTypes
 from sweetlink.commandhandler import CommandHandler
-from sweetlink.customfileserver import CustomFileServer
 from sweetlink.interfaces import IStateChangeHandler
 
 from .config import Config
@@ -23,7 +22,6 @@ from .secrets import Secrets
 from .version import Version
 from .logger import LoggerInit
 from .webserver import WebServer
-from .webrequestresponsehandler import WebRequestResponseHandler
 from .ha.configmanager import ConfigManager
 from .ha.webrtcmanager import WebRtcManager
 from .ha.connection import Connection
@@ -32,7 +30,6 @@ from .ha.serverinfo import ServerInfo
 from .ha.serverdiscovery import ServerDiscovery
 from .ha.homecontext import HomeContext
 from .ha.trackerinterceptor import TrackerInterceptor
-from .sage.sagehost import SageHost
 from .cloud_worker import CloudWorkerInstance
 from .cloudflaremanager import CloudflareManager
 
@@ -40,12 +37,38 @@ from .cloudflaremanager import CloudflareManager
 # This file is the main host for the linux service.
 class LinuxHost(IStateChangeHandler):
 
+    # Restituisce i MAC delle interfacce di rete fisiche, in maiuscolo.
+    # E' l'unica identita' che NON si copia insieme all'immagine della scheda SD, quindi e'
+    # cio' su cui si appoggiano la registrazione dell'hub e il riconoscimento del dispositivo.
+    @staticmethod
+    def GetHardwareMacs() -> List[str]:
+        macs:List[str] = []
+        # Solo interfacce fisiche: esclude le reti virtuali di Docker e delle VPN.
+        if os.path.exists('/sys/class/net/'):
+            for interface in os.listdir('/sys/class/net/'):
+                if interface.startswith(('eth', 'wlan', 'en', 'wl')):
+                    macPath = os.path.join('/sys/class/net/', interface, 'address')
+                    if os.path.exists(macPath):
+                        try:
+                            with open(macPath, 'r', encoding="utf-8") as f:
+                                mac = f.read().strip().upper()
+                                if len(mac) == 17:
+                                    macs.append(mac)
+                        except Exception:
+                            pass
+        # Se la scansione non trova nulla, ripiega sull'unico MAC che python sa dedurre.
+        if not macs:
+            import uuid
+            macNum = hex(uuid.getnode()).replace('0x', '').upper()
+            macs.append(':'.join(macNum[i:i + 2] for i in range(0, 11, 2)).zfill(17))
+        return macs
+
+
     def __init__(self, addonDataRootDir:str, logsDir:str, addonType:int, devConfig:Optional[Dict[str,Any]]) -> None:
         # When we create our class, make sure all of our core requirements are created.
         self.Secrets:Secrets = None #pyright: ignore[reportAttributeAccessIssue]
         self.WebServer:WebServer = None #pyright: ignore[reportAttributeAccessIssue]
         self.HaEventHandler:EventHandler = None #pyright: ignore[reportAttributeAccessIssue]
-        self.Sage:SageHost = None #pyright: ignore[reportAttributeAccessIssue]
         self.WebRtcManager:WebRtcManager = None #pyright: ignore[reportAttributeAccessIssue]
 
         # Indicates if we are running as the Home Assistant addon, or standalone docker or cli.
@@ -150,7 +173,14 @@ class LinuxHost(IStateChangeHandler):
             # Start the web server, which allows the user to interact with the plugin.
             # We start it as early as possible so the user can load the web page ASAP.
             # We always create the class, but only start the server for the in HA addon.
-            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig)
+            # Il pannello ha bisogno di sapere a quale indirizzo mandare il cliente per il claim
+            # e con quale MAC identificarsi: il MAC lo conosciamo gia', cosi' il cliente non deve
+            # trascriverlo a mano, che e' il passaggio piu' fragile dell'onboarding.
+            onboardApiUrl = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+            onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
+            # Ordinati, cosi' lo stesso hub produce sempre lo stesso link.
+            primaryMac = sorted(LinuxHost.GetHardwareMacs())[0]
+            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, primaryMac)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.
@@ -159,9 +189,9 @@ class LinuxHost(IStateChangeHandler):
             self.Logger.info("Remote Access Enabled: %s", str(enableRemoteAccess))
 
             # Unpack any dev vars that might exist
-            devLocalHomewayServerAddress = self.GetDevConfigStr(devConfig, "LocalHomewayServerAddress")
-            if devLocalHomewayServerAddress is not None:
-                self.Logger.warning("~~~ Using Local Dev Server Address: %s ~~~", devLocalHomewayServerAddress)
+            devLocalSweetplaceServerAddress = self.GetDevConfigStr(devConfig, "LocalSweetplaceServerAddress")
+            if devLocalSweetplaceServerAddress is not None:
+                self.Logger.warning("~~~ Using Local Dev Server Address: %s ~~~", devLocalSweetplaceServerAddress)
             # This is mostly just used to not allow the dev plugin to fallback to port 80
             if self.GetDevConfigStr(devConfig, "HomeAssistantProxyPort") is not None:
                 portStr = self.GetDevConfigStr(devConfig, "HomeAssistantProxyPort")
@@ -170,8 +200,8 @@ class LinuxHost(IStateChangeHandler):
 
             # Init Sentry, but it won't report since we are in dev mode.
             Telemetry.Init(self.Logger)
-            if devLocalHomewayServerAddress is not None:
-                Telemetry.SetServerProtocolAndDomain("http://"+devLocalHomewayServerAddress)
+            if devLocalSweetplaceServerAddress is not None:
+                Telemetry.SetServerProtocolAndDomain("http://"+devLocalSweetplaceServerAddress)
 
             # Init compression
             Compression.Init(self.Logger, storageDir)
@@ -182,9 +212,6 @@ class LinuxHost(IStateChangeHandler):
             # Setup the command handler
             # This must be setup before the config manager.
             CommandHandler.Init(self.Logger)
-
-            # Setup the custom file server
-            CustomFileServer.Init(self.Logger)
 
             # Setup the Home Assistant config manager
             configManager = ConfigManager(self.Logger)
@@ -208,14 +235,11 @@ class LinuxHost(IStateChangeHandler):
 
             # Init the ping pong helper.
             PingPong.Init(self.Logger, storageDir, pluginId)
-            if devLocalHomewayServerAddress is not None:
+            if devLocalSweetplaceServerAddress is not None:
                 PingPong.Get().DisablePrimaryOverride()
 
-            # Setup the web response handler
-            WebRequestResponseHandler.Init(self.Logger)
-
             # Setup the HA state change handler
-            self.HaEventHandler = EventHandler(self.Logger, pluginId, devLocalHomewayServerAddress)
+            self.HaEventHandler = EventHandler(self.Logger, pluginId, devLocalSweetplaceServerAddress)
 
             # Setup the HA connection object
             haConnection = Connection(self.Logger, self.HaEventHandler)
@@ -239,10 +263,6 @@ class LinuxHost(IStateChangeHandler):
             homeContext.Start()
             CommandHandler.Get().RegisterHomeContext(homeContext)
 
-            # Setup the sage sub system, it won't be started until the primary connection is established.
-            sagePrefix = self.Config.GetStr(Config.SageSection, Config.SagePrefixStringKey, None)
-            self.Sage = SageHost(self.Logger, pluginVersionStr, homeContext, haConnection, sagePrefix, devLocalHomewayServerAddress)
-
             # Now start the main runner!
             
             # --- SWEETPLACE CLOUD WORKER ---
@@ -254,7 +274,7 @@ class LinuxHost(IStateChangeHandler):
             # di rete che non deve ritardare l'avvio.
             #
             # Sta qui e non dentro OnPrimaryConnectionEstablished perche' non dipende da
-            # Homeway: dei quattro valori che spedisce (macs, plugin_id, private_key, app_url)
+            # Sweetplace: dei quattro valori che spedisce (macs, plugin_id, private_key, app_url)
             # nessuno viene dal remoto, e la funzione non usava ne' apiKey ne' connectedAccounts,
             # cioe' i suoi due soli argomenti di provenienza remota. Legato all'handshake, un hub
             # non si registrava affatto quando homeway.io non rispondeva.
@@ -267,27 +287,9 @@ class LinuxHost(IStateChangeHandler):
             # ritardo all'avvio, non una rottura.
             def _ReportToSweetplaceDB():
                 try:
-                    import uuid, requests, os, time
+                    import requests, time
 
-                    macs = []
-                    # Hardware Physical MAC Scan (Filter out virtual Docker/VPN networks)
-                    if os.path.exists('/sys/class/net/'):
-                        for interface in os.listdir('/sys/class/net/'):
-                            # Only target physical network interfaces
-                            if interface.startswith(('eth', 'wlan', 'en', 'wl')):
-                                mac_path = os.path.join('/sys/class/net/', interface, 'address')
-                                if os.path.exists(mac_path):
-                                    try:
-                                        with open(mac_path, 'r') as f:
-                                            mac = f.read().strip().upper()
-                                            if len(mac) == 17:
-                                                macs.append(mac)
-                                    except Exception: pass
-
-                    # Fallback to single MAC if hardware scan yields nothing
-                    if not macs:
-                        mac_num = hex(uuid.getnode()).replace('0x', '').upper()
-                        macs.append(':'.join(mac_num[i : i + 2] for i in range(0, 11, 2)).zfill(17))
+                    macs = LinuxHost.GetHardwareMacs()
 
                     # Submit an empty URL to let the cloud backend preserve any pre-configured custom tunnel domain (Zero-Touch AppURL)
                     app_url = ""
@@ -303,7 +305,7 @@ class LinuxHost(IStateChangeHandler):
                     #
                     # RITENTATIVO: all'avvio la rete o il backend possono non essere ancora
                     # pronti. Prima quella garanzia la dava implicitamente l'handshake con
-                    # Homeway, che qui non c'e' piu'.
+                    # Sweetplace, che qui non c'e' piu'.
                     #
                     # RIPETIZIONE: prima questo codice girava a ogni handshake primario, e la
                     # connessione primaria viene riciclata ogni 47h (sweetlinkcore.py:20), quindi
@@ -364,8 +366,8 @@ class LinuxHost(IStateChangeHandler):
             
             
             pluginConnectUrl = HostCommon.GetPluginConnectionUrl()
-            if devLocalHomewayServerAddress is not None:
-                pluginConnectUrl = HostCommon.GetPluginConnectionUrl(fullHostString="ws://"+devLocalHomewayServerAddress)
+            if devLocalSweetplaceServerAddress is not None:
+                pluginConnectUrl = HostCommon.GetPluginConnectionUrl(fullHostString="ws://"+devLocalSweetplaceServerAddress)
             oe = Sweetlink(pluginConnectUrl, pluginId, privateKey, self.Logger, self, pluginVersionStr, self.AddonType)
             oe.RunBlocking()
         except Exception as e:
@@ -374,7 +376,7 @@ class LinuxHost(IStateChangeHandler):
         # Allow the loggers to flush before we exit
         try:
             self.Logger.info("##################################")
-            self.Logger.info("#### Homeway Exiting ######")
+            self.Logger.info("#### Sweetplace Exiting ######")
             self.Logger.info("##################################")
             logging.shutdown()
         except Exception as e:
@@ -435,10 +437,10 @@ class LinuxHost(IStateChangeHandler):
         return None
 
 
-    # StatusChangeHandler Interface - Called by the Homeway logic when the server connection has been established.
+    # StatusChangeHandler Interface - Called by the Sweetplace logic when the server connection has been established.
     #
     def OnPrimaryConnectionEstablished(self, apiKey:str, connectedAccounts:List[str]) -> None:
-        self.Logger.info("Primary Connection To Homeway Established - We Are Ready To Go!")
+        self.Logger.info("Primary Connection To Sweetplace Established - We Are Ready To Go!")
 
         # Ensure we have a valid plugin id
         pluginId = self.GetPluginId()
@@ -446,13 +448,7 @@ class LinuxHost(IStateChangeHandler):
             raise Exception("Plugin ID is None in OnPrimaryConnectionEstablished, this should never happen!")
 
         # Set the current API key to the event handler
-        self.HaEventHandler.SetHomewayApiKey(apiKey)
-
-        # Once we have the API key, we can start or refresh the Sage system.
-        self.Sage.StartOrRefresh(pluginId, apiKey)
-
-        # Set the current API key to the custom file server
-        CustomFileServer.Get().UpdateAddonConfig(pluginId, apiKey)
+        self.HaEventHandler.SetSweetplaceApiKey(apiKey)
 
         # Let the WebRTC manager know the connection is established.
         self.WebRtcManager.OnPrimaryConnectionEstablished(apiKey)
@@ -468,7 +464,7 @@ class LinuxHost(IStateChangeHandler):
 
 
     #
-    # StatusChangeHandler Interface - Called by the Homeway logic when a plugin update is required for this client.
+    # StatusChangeHandler Interface - Called by the Sweetplace logic when a plugin update is required for this client.
     #
     def OnPluginUpdateRequired(self):
         self.Logger.error("!!! A Plugin Update Is Required -- If This Plugin Isn't Updated It Might Stop Working !!!")

@@ -283,7 +283,7 @@ class HomeContext(IHomeContext):
                         self._LastYamlMTimes[t] = 0
                         
                 if changed:
-                    # Invalidate homeway inner device cache, trigger re-evaluation of exposed entities
+                    # Invalidate sweetplace inner device cache, trigger re-evaluation of exposed entities
                     self.WorkerGoEvent.set()
                 
             except Exception as e:

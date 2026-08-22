@@ -19,16 +19,10 @@ Free, secure, and private advanced cloud features for Home Assistant. Made by th
 
 Use the "Open Web UI" button on the Sweetplace app info tab to access the Sweetplace app settings UI.
 
-The Sweetplace Settings Web UI allows:
-- Enable or disable remote access, but leave the other Sweetplace features active.
-- Expose or unexpose devices from Google Home, Alexa, and Sage.
-
-
-### 🌿 Sage AI
-
-A free and life-like voice assistant for Home Assistant. Sage AI enables free speech-to-text, text-to-speech, and a hyper-intelligent LLM chat powered by Gemini, ChatGPT, and more.
-
-[Setup Guide](https://sweetplace.me/sage-settings?source=addon_docs)
+The Sweetplace Settings Web UI shows:
+- The status of your hub.
+- Its hardware identifier, useful when contacting support.
+- A button that opens the Sweetplace setup portal with your device already identified.
 
 ### 📱 Home Assistant App Remote Access
 

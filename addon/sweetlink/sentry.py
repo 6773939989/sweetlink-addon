@@ -151,7 +151,7 @@ class Sentry:
 
     @staticmethod
     def SetAddonId(addonId:str):
-        sentry_sdk.set_context("homeway", { "addon-id": addonId })
+        sentry_sdk.set_context("sweetplace", { "addon-id": addonId })
 
 
     @staticmethod

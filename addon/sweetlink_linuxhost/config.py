@@ -32,9 +32,6 @@ class Config:
     LogFileMaxSizeMbKey = "max_file_size_mb"
     LogFileMaxCountKey = "max_file_count"
 
-    # Sage stuff.
-    SageSection = "sage"
-    SagePrefixStringKey = "sage_prefix"
 
     # WebRTC stuff.
     WebRtcSection = "webrtc"
@@ -51,12 +48,12 @@ class Config:
         { "Target": HaPortKey,  "Comment": "This is the port used to connect to Home Assistant."},
         { "Target": HaUseHttps,  "Comment": "True or false if the ip/port requires https."},
         { "Target": HaAccessTokenKey,  "Comment": "Required for standalone addon installs, not required for addon installs. This is the long lived access token used to connect to Home Assistant."},
-        { "Target": HaEnableRemoteAccess,  "Comment": "True or false if remote access is enabled. Assistant and other Homeway features will still work if remote access is disabled."},
+        { "Target": HaEnableRemoteAccess,  "Comment": "True or false if remote access is enabled. Assistant and other Sweetplace features will still work if remote access is disabled."},
         { "Target": LogLevelKey,  "Comment": "The active logging level. Valid values include: DEBUG, INFO, WARNING, or ERROR."},
-        { "Target": WebRtcUsernameKey,  "Comment": "The username used for WebRTC connections. See https://homeway.io/s/webrtc-config for setup details."},
-        { "Target": WebRtcPasswordKey,  "Comment": "The password used for WebRTC connections. See https://homeway.io/s/webrtc-config for setup details."},
-        { "Target": WebRtcStunServersKey,  "Comment": "A list of STUN servers used for WebRTC. See https://homeway.io/s/webrtc-config for setup details."},
-        { "Target": WebRtcTurnServersKey,  "Comment": "A list of TURN servers used for WebRTC. See https://homeway.io/s/webrtc-config for setup details."},
+        { "Target": WebRtcUsernameKey,  "Comment": "The username used for WebRTC connections."},
+        { "Target": WebRtcPasswordKey,  "Comment": "The password used for WebRTC connections."},
+        { "Target": WebRtcStunServersKey,  "Comment": "A list of STUN servers used for WebRTC."},
+        { "Target": WebRtcTurnServersKey,  "Comment": "A list of TURN servers used for WebRTC."},
     ]
 
     # The config lib we use doesn't support the % sign, even though it's valid .cfg syntax.

@@ -17,7 +17,7 @@
                 "eyJWZXJzaW9uRmlsZURpciI6Ii9ob21lL3BpL3N3ZWV0bGluay9hZGRvbiIsICJBZGRvbkRhdGFSb290RGlyIjoiL2hvbWUvcGkvLnN3ZWV0bGluay1hZGRvbiIsICJMb2dzRGlyIjoiL2hvbWUvcGkvLnN3ZWV0bGluay1hZGRvbi9sb2dzIiwgIlN0b3JhZ2VEaXIiOiIvaG9tZS9waS8uc3dlZXRsaW5rLWFkZG9uL2RhdGEiLCAiSXNSdW5uaW5nSW5IYUFkZG9uRW52IjpmYWxzZX0=",
                 //
                 // We can optionally pass a dev config json object, which has dev specific overwrites we can make.
-                "{\"LocalHomewayServerAddress\":  \"\"  , \"LogLevel\":\"DEBUG\", \"RunWebServer\": true }"
+                "{\"LocalSweetplaceServerAddress\":  \"\"  , \"LogLevel\":\"DEBUG\", \"RunWebServer\": true }"
             ]
         },
     ]

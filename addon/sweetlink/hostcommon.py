@@ -15,7 +15,6 @@ class HostCommon:
     c_PrivateKeyLength = 80
 
     # The url for the add plugin process.
-    c_AddPluginUrl = "https://homeway.io/getstarted"
 
 
     # Returns a new plugin Id. This needs to be crypo-random to make sure it's not predictable.
@@ -38,11 +37,6 @@ class HostCommon:
     @staticmethod
     def IsPrivateKeyValid(privateKey:Optional[str]) -> bool:
         return privateKey is not None and len(privateKey) == HostCommon.c_PrivateKeyLength
-
-
-    @staticmethod
-    def GetAddPluginUrl(pluginId:str) -> str:
-        return f"{HostCommon.c_AddPluginUrl}?id=" + pluginId
 
 
     @staticmethod

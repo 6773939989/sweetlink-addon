@@ -284,7 +284,7 @@ class HeaderHelper:
             logger.warning("CorrectLocationResponseHeaderIfNeeded got a location header, but no X-Forwarded-Proto header was set.")
             return locationValue
         # Don't correct if not allowed.
-        # This is a special case where we are redirecting to the homeway main site because remote access is disabled.
+        # This is a special case where we are redirecting to the sweetplace main site because remote access is disabled.
         if httpResult.GetAllowRedirectCorrection is False:
             return locationValue
 

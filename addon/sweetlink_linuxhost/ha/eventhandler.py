@@ -44,11 +44,11 @@ class EventHandler:
                                 "tag.", "text.", "time.", "tts.", "update.", "wake_word.", "weather." ])
 
 
-    def __init__(self, logger:logging.Logger, pluginId:str, devLocalHomewayServerAddress:Optional[str]) -> None:
+    def __init__(self, logger:logging.Logger, pluginId:str, devLocalSweetplaceServerAddress:Optional[str]) -> None:
         self.Logger = logger
         self.PluginId = pluginId
-        self.HomewayApiKey:Optional[str] = None
-        self.DevLocalHomewayServerAddress:Optional[str] = devLocalHomewayServerAddress
+        self.SweetplaceApiKey:Optional[str] = None
+        self.DevLocalSweetplaceServerAddress:Optional[str] = devLocalSweetplaceServerAddress
         self.Lock = threading.Lock()
         self.HaVersion:Optional[str] = None
 
@@ -103,10 +103,10 @@ class EventHandler:
         self.HaWebSocketCon:Optional[IHomeAssistantWebSocket] = None
 
 
-    def SetHomewayApiKey(self, key:str) -> None:
+    def SetSweetplaceApiKey(self, key:str) -> None:
         # When we get the API key, if it's the first time it's being set, request a sync to make sure things are in order.
-        hadKey = self.HomewayApiKey is not None and len(self.HomewayApiKey) > 0
-        self.HomewayApiKey = key
+        hadKey = self.SweetplaceApiKey is not None and len(self.SweetplaceApiKey) > 0
+        self.SweetplaceApiKey = key
         if hadKey is False:
             entityId = "startup_sync"
             e = self._GetSendEventAndValidate(entityId, True, True)
@@ -487,7 +487,7 @@ class EventHandler:
     def _ProcessSendEvents(self, events:List[Dict[str, Any]]) -> bool:
 
         # Ensure we have an API key.
-        if self.HomewayApiKey is None or len(self.HomewayApiKey) == 0:
+        if self.SweetplaceApiKey is None or len(self.SweetplaceApiKey) == 0:
             self.Logger.warning("We wanted to do a send state change events, but don't have an API key.")
             time.sleep(10.0)
             return False
@@ -496,9 +496,9 @@ class EventHandler:
         try:
             # Make the call.
             url = os.environ.get("HOMEWAY_URL", "https://homeway.io") + "/api/plugin-api/statechangeevents"
-            if self.DevLocalHomewayServerAddress is not None:
-                url = f"http://{self.DevLocalHomewayServerAddress}/api/plugin-api/statechangeevents"
-            result = HttpSessions.GetSession(url).post(url, json={"PluginId": self.PluginId, "ApiKey": self.HomewayApiKey, "Events": events }, timeout=30)
+            if self.DevLocalSweetplaceServerAddress is not None:
+                url = f"http://{self.DevLocalSweetplaceServerAddress}/api/plugin-api/statechangeevents"
+            result = HttpSessions.GetSession(url).post(url, json={"PluginId": self.PluginId, "ApiKey": self.SweetplaceApiKey, "Events": events }, timeout=30)
 
             # Check for success.
             if result.status_code < 300:
@@ -514,7 +514,7 @@ class EventHandler:
 
         except Exception as e:
             if (e is ConnectionError or e is ssl.SSLError) and "Max retries exceeded with url" in str(e):
-                self.Logger.error("Homeway server is not reachable. Will try again later.", e)
+                self.Logger.error("Sweetplace server is not reachable. Will try again later.", e)
             else:
                 Sentry.OnException("_StateChangeSender exception", e)
         return False

@@ -7,7 +7,6 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any, Dict, Optional
 
-from sweetlink.hostcommon import HostCommon
 from sweetlink.commandhandler import CommandHandler
 from sweetlink.interfaces import IAccountLinkStatusUpdateHandler
 from sweetlink.sentry import Sentry
@@ -23,11 +22,15 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     # A static instance var for the handler class to access this class.
     Instance:"WebServer" = None # type: ignore[reportClassAttributeMissing]
 
-    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]]) -> None:
+    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, primaryMac:str) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
         self.Config = config
+        # Il claim si chiude sul portale Sweetplace: il pannello ci manda il cliente con il MAC
+        # gia' compilato, cosi' l'unica cosa che deve inserire e' la propria email.
+        self.OnboardBaseUrl = onboardBaseUrl
+        self.PrimaryMac = primaryMac
         self.AccountConnected = False
         self.IsPendingStartup = True
         self.webServerThread:Optional[threading.Thread] = None
@@ -172,30 +175,23 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 self.end_headers()
                 return
 
-            # Get if remote access is enabled.
-            remoteAccessEnabledChecked = ""
-            if HttpRequest.GetRemoteAccessEnabled():
-                remoteAccessEnabledChecked = "checked"
-
             # Send the basic HTML
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            connectingBlockDisplay = "none"
-            connectingTimerBool = "false"
-            linkAccountBlockDisplay = "none"
-            connectedAndReadyBlockDisplay = "none"
-            pluginLinkUrl = HostCommon.GetAddPluginUrl(WebServer.Instance.PluginId)
+            onboardUrl = f"{WebServer.Instance.OnboardBaseUrl}/?mac={WebServer.Instance.PrimaryMac}"
+            # Il MAC e il pulsante di configurazione sono dati locali e non dipendono da nessun
+            # servizio remoto: restano sempre visibili. Lo stato di avvio governa solo la riga di
+            # stato e la ricarica automatica, altrimenti un hub che non riesce a collegarsi
+            # resterebbe senza l'unica azione che puo' compiere.
             if WebServer.Instance.IsPendingStartup:
-                connectingBlockDisplay = "block"
+                statusColor = "#c0dd72"
+                statusText = "Avvio in corso..."
                 connectingTimerBool = "true"
             else:
-                if WebServer.Instance.AccountConnected:
-                    connectedAndReadyBlockDisplay = "block"
-                else:
-                    linkAccountBlockDisplay = "block"
-                    # Use the timer, so the page will refresh and check if the account is linked.
-                    connectingTimerBool = "true"
+                statusColor = "#31C591"
+                statusText = "Hub attivo"
+                connectingTimerBool = "false"
             html = """
 <html>
 <head><title>Sweetplace Control</title>
@@ -321,140 +317,38 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     <div style="background-color:#1C1C1C; border-radius: 5px; padding: 25px; min-width: 300px; max-width:450px">
         <div style="display: flex; justify-content: center; margin-bottom: 20px;">
             <div style="display: flex; flex-direction: column; align-items: center;">
-                <!-- Important! Set the height so the page doesn't shift when the image loads on the refresh loop -->
-                <img src="https://homeway.io/img/logo_maskable.png" height="70" width="70" style="width: 70px; height: 70px;    border-radius: 10px">
                 <div style="display: flex; justify-content: center; font-size: 28px; margin-bottom:10px; margin-top:10px">
                     <!-- this must target open blank or it won't open properly! -->
-                    <a href="https://homeway.io/dashboard?ha=1&source=addon_web_ui_link" target="_blank" class="whiteLink">Sweetplace</a>
+                    <a href="https://sweetplace.me" target="_blank" class="whiteLink">Sweetplace</a>
                 </div>
             </div>
         </div>
 
-        <div style="display: """+ connectingBlockDisplay +""";">
-            <div style="display: flex; justify-content: center; align-items: baseline; margin-bottom:5px;">
-                <div style="width:10px; height:10px; background-color:#bcdf5c; border-radius:50%; margin-right:5px;"></div>
-                <div style="margin-bottom:5px; text-align: center; color:#c0dd72; font-weight: bold;">
-                    Connecting To Homeway.io...
-                </div>
-            </div>
-        </div>
-        <div style="display: """+linkAccountBlockDisplay+""";">
-            <div style="display: flex; justify-content: center; align-items: baseline; margin-bottom:4px;">
-                <div style="width:10px; height:10px; background-color:#df5c5c; border-radius:50%; margin-right:5px;"></div>
-                <div style="margin-bottom:5px; text-align: center; color:#df5c5c; font-weight: bold;">
-                    Addon No Linked To Account
-                </div>
-            </div>
-            <div style="margin-bottom:8px; text-align: center;">
-                <b>This addon isn't linked to a Homeway account.</b>
-            </div>
-            <div style="margin-bottom:10px; text-align: center;">
-                Use the button below to finish the addon setup.
-            </div>
-            <div style="display: flex; justify-content: center;" id="linkAccountButton">
-                <div class="featureButton pinkFeatureButton" style="width: 250px;">
-                    Link Your Account Now
-                </div>
-            </div>
-        </div>
-        <div style="display: """+connectedAndReadyBlockDisplay+""";">
-            <div style="display: flex; justify-content: center; align-items: baseline; margin-bottom:5px;">
-                <div style="width:10px; height:10px; background-color:#31C591; border-radius:50%; margin-right:5px;"></div>
-                <div style="margin-bottom:5px; text-align: center; color:#31C591; font-weight: bold;">
-                    Securely Connected
-                </div>
-            </div>
-
-            <div style="margin-bottom:30px; text-align: center;" class="subtleText">
-                <!-- this must target open blank or it won't open properly! -->
-                Visit <a href="https://homeway.io/dashboard?ha=1&source=addon_web_ui_link" target="_blank" class="blueLink">Homeway.io</a> for secure and private remote access.
-            </div>
-
-            <div class="featureHolder">
-               <div style="display: flex; flex-direction: row; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div class="featureHeader">Enable Remote Access</div>
-                        <div class="featureDetails">Disabling remote access still allows Sage, Google Home, &amp; Alexa, and other Homeway features to work.</div>
-                    </div>
-                    <div style="padding-right:10px">
-                        <label class="switch switchClass" >
-                            <input type="checkbox" id="enable-remote-access-switch" """+remoteAccessEnabledChecked+""">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-               </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">
-                        Sage AI
-                    </div>
-                    <div class="featureDetails">
-                        Free, private, lifelike AI Home Assistant Assist. Including text-to-speech, speech-to-text, and LLM conversational chat integrations.
-                    </div>
-                </div>
-                <div class="pinkFeatureButton featureButton" id="goToSageSetup">
-                    Setup Sage AI Now
+        <div>
+            <div style="display: flex; justify-content: center; align-items: baseline; margin-bottom:20px;">
+                <div style="width:10px; height:10px; background-color:"""+statusColor+"""; border-radius:50%; margin-right:5px;"></div>
+                <div style="margin-bottom:5px; text-align: center; color:"""+statusColor+"""; font-weight: bold;">
+                    """+statusText+"""
                 </div>
             </div>
 
             <div class="featureHolder">
                 <div>
-                    <div class="featureHeader">
-                        Alexa &amp; Google Assistant
-                    </div>
+                    <div class="featureHeader">Configura il tuo impianto</div>
                     <div class="featureDetails">
-                        Secure, reliable, no-hassle Alexa &amp; Google Assistant integrations for Home Assistant. Set up in 10 seconds.
+                        Registra l'hub, imposta la posizione e gestisci gli utenti di casa.
+                        Il tuo dispositivo e' gia' riconosciuto: ti serve solo la tua email.
                     </div>
                 </div>
-                <div class="pinkButton featureButton" id="goToAssistantSetup">
-                    Setup Alexa &amp; Google Assistant Now
-                </div>
-                <div class="pinkButton featureButton" id="goToAssistantDeviceControl" style="margin-top:15px;">
-                    Control Exposed Devices
+                <div class="pinkFeatureButton featureButton" id="goToOnboarding">
+                    Apri la configurazione
                 </div>
             </div>
 
             <div class="featureHolder">
                 <div>
-                    <div class="featureHeader">
-                        Home Assistant App
-                    </div>
-                    <div class="featureDetails">
-                        Free, secure, &amp; private remote access for the iPhone and Android Home Assistant apps.
-                    </div>
-                </div>
-                <div class="pinkButton featureButton" id="goToAppSetup">
-                    Setup Your Home Assistant App
-                </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">
-                        Local Access
-                    </div>
-                    <div class="featureDetails">
-                        Remote access to local LAN services like Node-RED, Unraid, Proxmax, AdGuard, PiHole, &amp; More.
-                    </div>
-                </div>
-                <div class="pinkButton featureButton" id="goToLocalAccessSetup">
-                    Setup Local Access
-                </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">
-                        Remote Access
-                    </div>
-                    <div class="featureDetails">
-                        Free, secure, &amp; private remote access to your Home Assistant instance from anywhere in the world.
-                    </div>
-                </div>
-                <div class="pinkButton featureButton" id="goToDashboardButton">
-                    Go To Your Homeway Dashboard
+                    <div class="featureHeader">Identificativo hardware</div>
+                    <div class="featureDetails" style="word-break: break-all;">"""+WebServer.Instance.PrimaryMac+"""</div>
                 </div>
             </div>
         </div>
@@ -463,35 +357,14 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 <script>
     // Wait for the document to be ready.
     (function() {
-        document.getElementById("linkAccountButton").onclick = (event) => { window.open('"""+pluginLinkUrl+"""', '_blank').focus(); };
-        document.getElementById("goToDashboardButton").onclick = (event) => { window.open("https://homeway.io/dashboard?source=addon_control", '_blank').focus(); };
-        document.getElementById("goToAssistantSetup").onclick = (event) => { window.open("https://homeway.io/assistant?source=addon_control", '_blank').focus(); };
-        document.getElementById("goToAssistantDeviceControl").onclick = (event) => { window.open("https://homeway.io/assistantdevicecontrol?source=addon_control", '_blank').focus(); };
-        document.getElementById("goToSageSetup").onclick = (event) => { window.open("https://homeway.io/sage?source=addon_control", '_blank').focus(); };
-        document.getElementById("goToAppSetup").onclick = (event) => { window.open("https://homeway.io/app?source=addon_control", '_blank').focus(); };
-        document.getElementById("goToLocalAccessSetup").onclick = (event) => { window.open("https://homeway.io/localaccess?source=addon_control", '_blank').focus(); };
-        const remoteSwitch = document.getElementById('enable-remote-access-switch');
-        remoteSwitch.onchange = (event) => {
-            const enabled = remoteSwitch.checked;
-            // This must be relative to this page, since the hosted web page in HA is a long path.
-            fetch("api/remote_access_enabled", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ enabled: enabled })
-            }).then(response => {
-                if (!response.ok) {
-                    alert("Failed to update remote access setting.");
-                    // Revert the switch state
-                    remoteSwitch.checked = !enabled;
-                }
-            }).catch(error => {
-                alert("Error updating remote access setting.");
-                // Revert the switch state
-                remoteSwitch.checked = !enabled;
-            });
-        };
+        const onboardingButton = document.getElementById("goToOnboarding");
+        if(onboardingButton)
+        {
+            // Deve aprirsi in una scheda nuova: dentro l'iframe dell'Ingress di Home Assistant
+            // la navigazione e' vincolata, e il portale usa localStorage per la sessione, che in
+            // un iframe di terze parti i browser bloccano o partizionano.
+            onboardingButton.onclick = (event) => { window.open('"""+onboardUrl+"""', '_blank').focus(); };
+        }
         if("""+connectingTimerBool+""")
         {
             setInterval(()=> {location.reload();}, 1000)

@@ -40,9 +40,6 @@ class DebugProfiler:
         # Enables all web streams to be profiled.
         # The best way to do this is to get one URL you want to debug, enable it, and then only hit that URL.
         # This includes Http and WS web streams!
-        # Ex: https://homeway.io/api/printer/snapshot?id=<printerid>
-        #     https://homeway.io/api/live/stream?id=<printerid>
-        #     https://homeway.io/assets/index-17a5ec1d.js
         DebugProfilerFeatures.WebStream : 0,
     }
 
