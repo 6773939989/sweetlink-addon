@@ -249,6 +249,109 @@ class LinuxHost(IStateChangeHandler):
             privateKey = self.GetPrivateKey()
             CloudWorkerInstance.Start(self.Logger, pluginId, privateKey, haConnection, storageDir)
             
+            # --- SWEETPLACE ONBOARDING REPORTER ---
+            # Registra l'hub nel database Sweetplace, su un thread suo perche' e' una chiamata
+            # di rete che non deve ritardare l'avvio.
+            #
+            # Sta qui e non dentro OnPrimaryConnectionEstablished perche' non dipende da
+            # Homeway: dei quattro valori che spedisce (macs, plugin_id, private_key, app_url)
+            # nessuno viene dal remoto, e la funzione non usava ne' apiKey ne' connectedAccounts,
+            # cioe' i suoi due soli argomenti di provenienza remota. Legato all'handshake, un hub
+            # non si registrava affatto quando homeway.io non rispondeva.
+            #
+            # Il CloudflareManager qui sotto ha bisogno che questa registrazione sia gia' arrivata
+            # (il backend rifiuta il token del tunnel a un device senza /device/ping,
+            # onboarding/src/index.ts:204), ma fra i due NON c'e' ordinamento garantito: sono due
+            # thread e le richieste possono essere in volo insieme. Se il provisioning arriva
+            # prima prende 404 e ritenta dopo 60s (cloudflaremanager.py:88-90): il costo e' un
+            # ritardo all'avvio, non una rottura.
+            def _ReportToSweetplaceDB():
+                try:
+                    import uuid, requests, os, time
+
+                    macs = []
+                    # Hardware Physical MAC Scan (Filter out virtual Docker/VPN networks)
+                    if os.path.exists('/sys/class/net/'):
+                        for interface in os.listdir('/sys/class/net/'):
+                            # Only target physical network interfaces
+                            if interface.startswith(('eth', 'wlan', 'en', 'wl')):
+                                mac_path = os.path.join('/sys/class/net/', interface, 'address')
+                                if os.path.exists(mac_path):
+                                    try:
+                                        with open(mac_path, 'r') as f:
+                                            mac = f.read().strip().upper()
+                                            if len(mac) == 17:
+                                                macs.append(mac)
+                                    except Exception: pass
+
+                    # Fallback to single MAC if hardware scan yields nothing
+                    if not macs:
+                        mac_num = hex(uuid.getnode()).replace('0x', '').upper()
+                        macs.append(':'.join(mac_num[i : i + 2] for i in range(0, 11, 2)).zfill(17))
+
+                    # Submit an empty URL to let the cloud backend preserve any pre-configured custom tunnel domain (Zero-Touch AppURL)
+                    app_url = ""
+
+                    # Check for explicit API or fallback to presumed production URL
+                    api_url = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+                    payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
+
+                    self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
+
+                    # Ritenta finche' la registrazione non va a buon fine, poi la ripete a bassa
+                    # frequenza. Servono entrambe le cose, per due motivi diversi.
+                    #
+                    # RITENTATIVO: all'avvio la rete o il backend possono non essere ancora
+                    # pronti. Prima quella garanzia la dava implicitamente l'handshake con
+                    # Homeway, che qui non c'e' piu'.
+                    #
+                    # RIPETIZIONE: prima questo codice girava a ogni handshake primario, e la
+                    # connessione primaria viene riciclata ogni 47h (sweetlinkcore.py:20), quindi
+                    # l'upsert rigirava almeno una volta al giorno e mezzo. E' quella ripetizione
+                    # a rimediare ai due casi in cui uno sparo solo non basta: un MAC che compare
+                    # dopo l'avvio (dongle USB, Wi-Fi alzato dopo) non avrebbe mai la sua riga,
+                    # e una riga persa lato server non verrebbe mai ricreata.
+                    RIPETIZIONE_SEC = 6 * 60 * 60
+                    RITENTATIVO_SEC = 60
+                    while True:
+                        attesaSec = RITENTATIVO_SEC
+                        try:
+                            response = requests.post(api_url, json=payload, timeout=10)
+                            registrato = False
+                            if response.ok:
+                                # Non basta il 2xx: il backend serve la SPA con HTTP 200 su
+                                # qualunque path non instradato (onboarding/src/index.ts:842-844),
+                                # quindi un SWEETPLACE_ONBOARD_API sbagliato darebbe 200 senza
+                                # aver registrato niente. La conferma sta nel corpo.
+                                try:
+                                    registrato = response.json().get("success") is True
+                                except Exception:
+                                    registrato = False
+
+                            if registrato:
+                                self.Logger.info(f"Sweetplace Onboarding: hub registrato. Prossimo aggiornamento fra {RIPETIZIONE_SEC // 3600}h.")
+                                attesaSec = RIPETIZIONE_SEC
+                            elif response.ok:
+                                self.Logger.error(f"Sweetplace Onboarding: {api_url} ha risposto HTTP {response.status_code} ma senza conferma di registrazione. Controllare che SWEETPLACE_ONBOARD_API punti a /device/ping.")
+                            elif response.status_code == 400:
+                                # L'unico 4xx che il backend produce per un payload sbagliato
+                                # (index.ts:136-138). Ritentarlo identico non puo' funzionare.
+                                # Gli altri 4xx arrivano dalla piattaforma prima di Express
+                                # (404 senza deployment attivo, 408, 429) e vanno ritentati.
+                                self.Logger.error("Sweetplace Onboarding: payload rifiutato dal backend (HTTP 400), non ritento.")
+                                return
+                            else:
+                                self.Logger.warning(f"Sweetplace Onboarding: backend HTTP {response.status_code}, riprovo fra {RITENTATIVO_SEC}s...")
+                        except Exception as e:
+                            self.Logger.warning(f"Sweetplace Onboarding: invio fallito ({e}), riprovo fra {RITENTATIVO_SEC}s...")
+                        time.sleep(attesaSec)
+                except Exception as e:
+                    self.Logger.error(f"Sweetplace Onboarding Reporter failed: {e}")
+
+            import threading
+            threading.Thread(target=_ReportToSweetplaceDB, daemon=True).start()
+            # --------------------------------------
+
             # --- SWEETPLACE CLOUDFLARE MANAGER ---
             # Start the manager thread that requests the JWT Token and spawns cloudflared
             # We pass the plugin_id so the backend can resolve the correct MAC/tunnel.
@@ -341,52 +444,6 @@ class LinuxHost(IStateChangeHandler):
         pluginId = self.GetPluginId()
         if pluginId is None:
             raise Exception("Plugin ID is None in OnPrimaryConnectionEstablished, this should never happen!")
-
-        privateKey = self.GetPrivateKey()
-
-        # --- SWEETPLACE ONBOARDING REPORTER ---
-        def _ReportToSweetplaceDB():
-            try:
-                import uuid, requests, json, os, time
-                
-                macs = []
-                # Hardware Physical MAC Scan (Filter out virtual Docker/VPN networks)
-                if os.path.exists('/sys/class/net/'):
-                    for interface in os.listdir('/sys/class/net/'):
-                        # Only target physical network interfaces
-                        if interface.startswith(('eth', 'wlan', 'en', 'wl')):
-                            mac_path = os.path.join('/sys/class/net/', interface, 'address')
-                            if os.path.exists(mac_path):
-                                try:
-                                    with open(mac_path, 'r') as f:
-                                        mac = f.read().strip().upper()
-                                        if len(mac) == 17:
-                                            macs.append(mac)
-                                except Exception: pass
-                
-                # Fallback to single MAC if hardware scan yields nothing
-                if not macs:
-                    mac_num = hex(uuid.getnode()).replace('0x', '').upper()
-                    macs.append(':'.join(mac_num[i : i + 2] for i in range(0, 11, 2)).zfill(17))
-
-                # Wait 5 seconds to ensure Homeway has registered our connection internally
-                time.sleep(5.0)
-                
-                # Submit an empty URL to let the cloud backend preserve any pre-configured custom tunnel domain (Zero-Touch AppURL)
-                app_url = ""
-                
-                # Check for explicit API or fallback to presumed production URL
-                api_url = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
-                payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
-                
-                self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
-                requests.post(api_url, json=payload, timeout=10)
-            except Exception as e:
-                self.Logger.error(f"Sweetplace Onboarding Reporter failed: {e}")
-                
-        import threading
-        threading.Thread(target=_ReportToSweetplaceDB, daemon=True).start()
-        # --------------------------------------
 
         # Set the current API key to the event handler
         self.HaEventHandler.SetHomewayApiKey(apiKey)

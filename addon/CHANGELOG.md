@@ -1,6 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.42
+
+- 🔗 La registrazione dell'hub sul cloud Sweetplace non attende più la connessione a Homeway: parte all'avvio dell'add-on, usando solo dati generati sul dispositivo.
+- 🔁 Se la rete o il backend non sono ancora pronti all'avvio, la registrazione viene ritentata ogni minuto finché non riesce, e da lì in poi viene rinfrescata ogni 6 ore.
+- ✅ L'esito della registrazione viene letto dalla risposta del backend e non più dal solo codice HTTP, così un endpoint configurato male non passa più per riuscito.
+- 🛠️ Corretto il provisioning del tunnel Cloudflare, che al primo avvio di un dispositivo nuovo falliva e veniva ritentato all'infinito senza mai emettere il tunnel.
+
 ## 2.7.27
 
 - 🔑 Nuovo wizard di invito utente a 3 step: scarica app, configura URL/username, genera password monouso.
