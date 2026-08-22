@@ -1,7 +1,7 @@
 ---
 titolo: Sweetlink parla con i server di Homeway: cosa cambia se smettiamo
 stato: in-review
-revisione: 2
+revisione: 3
 in-carico-a:
 passo-a:
 issue: 5
@@ -34,6 +34,26 @@ un percorso proprio verso `turn.<dominio>:3478` e non tocca l'hostname pubblicat
 
 Trattare i due piani come uno solo è ciò che rendeva il problema grande. Separati, ciascuno ha una
 soluzione piccola.
+
+### Cosa e' stato tagliato
+
+Il fork non contiene piu' i sottosistemi fuori perimetro. Rimossi l'assistente vocale
+(l'intero package `sage/`, la porta Wyoming 11027, le dipendenze `wyoming`, `zeroconf` e
+`aiohttp`, e cinque moduli flatbuffer che nessun altro referenziava) e il `CustomFileServer`,
+che iniettava nel frontend di Home Assistant del cliente uno script chiamante un servizio
+esterno con addon id e api key al seguito: non era una funzione mancante, era una funzione di
+un altro prodotto che girava in casa dei clienti. Con loro e' caduto
+`webrequestresponsehandler.py`, che esisteva solo per quell'iniezione.
+
+Il pannello dell'add-on e' stato riscritto: stato dell'hub, identificativo hardware e un
+pulsante che apre il portale Sweetplace passando il MAC. Sono spariti l'interruttore
+dell'accesso remoto e tutte le schede che portavano su pagine di terzi. Il pulsante apre una
+scheda nuova e non un iframe: dentro l'Ingress la navigazione e' vincolata e il portale usa
+`localStorage`, che i browser bloccano o partizionano nei frame di terze parti.
+
+I riferimenti visibili sono passati da **184 a 10**. I dieci rimasti sono sette endpoint vivi,
+due costanti che riconoscono i marcatori scritti dalle versioni precedenti dentro il
+`configuration.yaml` del cliente, e un commento. Nessuno compare nei log o nell'interfaccia.
 
 ### Cosa dipende ancora da Homeway
 
@@ -263,8 +283,10 @@ quindi **passa dal tunnel**. La misura del punto 6 serve anche a sapere quanto s
 4. **Riesprimere il filtro entità.** Oggi il filtro Sweetplace per Alexa e Google agisce solo sul flusso
    verso Homeway: gli unici chiamanti sono in `eventhandler.py:233-234` e `317-320`. Cambiando porta
    d'ingresso va espresso nei blocchi `filter:` nativi di HA, che `configmanager.py` già sa scrivere.
-5. **Ridisegnare la UI dell'add-on**, che dà per scontata la connessione a Homeway e resta bloccata su
-   *"Connecting To Homeway.io..."* (`webserver.py:337`) ricaricandosi ogni secondo (`webserver.py:495-498`).
+5. ~~Ridisegnare la UI dell'add-on~~ — **fatto**. Il pannello non nomina piu' servizi di terzi e mostra
+   MAC e pulsante di configurazione anche prima che la connessione remota si stabilisca, perche' sono
+   dati locali: nasconderli dietro un servizio esterno avrebbe lasciato senza azioni proprio l'hub che
+   non riesce a collegarsi.
 6. **Skill Alexa e Action Google proprie**, quando si decide di riaccenderle. Tempi dettati da Amazon e
    Google, non comprimibili.
 
@@ -282,6 +304,9 @@ quindi **passa dal tunnel**. La misura del punto 6 serve anche a sapere quanto s
 | **TURN proprio su VPS Hetzner, non su Railway** | coturn alloca i relay su UDP 49152-65535 e Railway non espone UDP; i relay TCP di RFC 6062 non sono usati dai browser | r2 |
 | **Non costruire frp adesso: prima misurare** | I due argomenti che lo giustificavano — costo e vincoli contrattuali Cloudflare — sono caduti alla verifica. Resta l'indipendenza in sé, che non è urgente | r2 |
 | **Non usare Cloudflare Access sugli hostname dei clienti** | Tiene fuori la §2.2 sulla rivendita di Zero Trust, non consuma seat, e non rompe Alexa e Google che non fanno login interattivo | r2 |
+| **Il MAC e' l'identita' che conta, non il `plugin_id`** | Il `plugin_id` nasce al primo avvio e finisce dentro l'immagine clonata: se la procedura di wipe non viene eseguita, tutti gli hub sono cloni del primo e solo uno si registra. Il MAC non si copia con la scheda SD | r3 |
+| **L'identita' deve accorgersi di essere stata clonata** | Legare `plugin_id` e `private_key` ai MAC visti al primo avvio, e rigenerarli quando nessuno di quei MAC e' piu' presente. Rende innocuo clonare un'immagine gia' avviata e toglie la disciplina dell'operatore dal percorso critico | r3 |
+| **Il claim resta a due fattori: dispositivo piu' email** | Il MAC identifica l'apparecchio, l'email la persona. Il backend ha gia' un blocco anti-hijacking che presuppone quel legame (`index.ts:433-439`): con il solo MAC chiunque potrebbe rivendicare l'hub di un altro | r3 |
 
 ## Alternative scartate
 
@@ -295,6 +320,8 @@ quindi **passa dal tunnel**. La misura del punto 6 serve anche a sapere quanto s
 | **Famiglia WireGuard e mesh (WireGuard, Nebula, NetBird, Headscale)** | UDP in ingresso obbligatorio, e i container Railway non hanno `NET_ADMIN` né `/dev/net/tun`. WireGuard esclude esplicitamente il tunneling su TCP. In più NetBird ha i componenti server sotto AGPLv3, non BSD-3 come si legge in giro | r2 |
 | **Pangolin / Newt** | Non è open source nella parte che conta: 207 file sotto Fossorial Commercial License, incluso tutto `server/private/` con SSO, rate limiting e audit. Uso gratuito limitato sotto i 100.000 $ di ricavi lordi e divieto di far operare i componenti a terzi | r2 |
 | **rathole** | Tutti i binari ARM ufficiali sono compilati senza TLS e senza websocket (*"Cross-compiling with tls is hard. So we don't :("*), quindi inutilizzabili sugli hub. Nessuna release stabile da ottobre 2023 | r2 |
+| **Claim completamente automatico dal solo MAC** | Toglierebbe l'unico elemento che prova chi possiede l'hub. L'alternativa vera non e' tecnica: e' che sia l'installatore ad assegnare hub e cliente prima della consegna, cioe' il modello dealer dell'issue #4 | r3 |
+| **Incorporare il portale di onboarding nell'iframe dell'Ingress** | Tecnicamente possibile (il portale non manda `X-Frame-Options` ne' CSP `frame-ancestors`), ma la sessione vive in `localStorage` e nei frame di terze parti Safari e Firefox la bloccano: il cliente farebbe il claim e si ritroverebbe scollegato al primo ricaricamento | r3 |
 | **Chisel, wstunnel, boringproxy, sish, zrok, OpenZiti** | Chisel e wstunnel non fanno routing per hostname: risolvono il trasporto e lasciano da costruire "un hostname per hub". Gli altri pretendono più porte TCP/TLS grezze, che Railway non dà, o sono abbandonati | r2 |
 
 ## Questioni aperte
@@ -306,6 +333,9 @@ quindi **passa dal tunnel**. La misura del punto 6 serve anche a sapere quanto s
 - [ ] Chi gestisce dominio, sottodomini e certificati degli hub, e con quale criterio si assegnano i nomi — oggi sono `crypto.randomBytes(4)` (`index.ts:246`) — *sollevata in r1 da @6773939989*
 - [ ] Il blocco `google_assistant:` scritto dall'add-on contiene segnaposto: `private_key: "nokey"`, `client_email: relay@sweetplace.it`, `project_id: sweetplace-relay` (`configmanager.py:186-190`). Va chiarito se il report proattivo di stato verso Google sia mai stato attivo — *sollevata in r1 da @6773939989*
 - [ ] Esposizione diretta di Home Assistant su Internet: l'ingress punta a `127.0.0.1:8123` senza filtri applicativi, e su questo canale non può stare una protezione interattiva perché romperebbe Alexa e Google. Va deciso cosa sta davanti — *sollevata in r1, riformulata in r2*
+- [ ] Il portale non legge il parametro `?mac=` che il pannello gli passa: la SPA guarda solo `session_token` (`onboard-app/src/App.tsx:169-170`). Finche' non lo legge, il cliente digita comunque il MAC a mano e il testo del pannello promette una cosa che non succede — *sollevata in r3 da @6773939989*
+- [ ] Il sigillo hardware sull'identita' e' concordato ma non ancora scritto: e' il prossimo intervento sul codice — *sollevata in r3 da @6773939989*
+- [ ] Le due costanti che riconoscono i marcatori delle versioni precedenti nel `configuration.yaml` andranno tolte quando nessun hub in circolazione portera' piu' il marcatore vecchio — *sollevata in r3 da @6773939989*
 - [ ] Se un domani si costruisse frp: resta da provare che l'edge di Railway consegni al backend l'upgrade in HTTP/1.1 con i byte iniziali `GET /~!frp` intatti. Mezza giornata di test, oggi non urgente — *sollevata in r2 da @6773939989*
 
 ### Questioni chiuse in r2
@@ -358,3 +388,26 @@ hub dall'handshake di Homeway.
 **Lasciato aperto:** il numero che decide il dimensionamento di tutto, cioè quanto spesso WebRTC
 ripiega sul relay invece di andare diretto, e con quale frequenza HA ripiega su HLS riportando il
 video dentro il tunnel.
+
+### r3 — 2026-08-22 — @6773939989 — POV: portare a terra la r2, e scoprire cosa si rompe facendolo
+
+**Messo in discussione:** l'idea che "togliere Homeway" fosse un lavoro di rinomina. Leggendo i 184
+riferimenti rimasti e' emerso che meta' stava dentro sottosistemi fuori perimetro, e che uno di
+questi — il `CustomFileServer` — non era codice inerte ma il contatore di traffico di un altro
+prodotto, che girava nel browser dei clienti. Rimuoverli e' stato piu' pulito e piu' piccolo che
+rinominarli.
+
+Messo in discussione anche l'assunto che il `plugin_id` fosse una buona identita' su cui appoggiare
+il claim: nasce al primo avvio e finisce dentro l'immagine clonata, quindi una procedura di wipe
+saltata produrrebbe una flotta di cloni di cui solo il primo si registra. Il MAC e' l'unica cosa che
+non si copia con la scheda SD.
+
+**Cambiato nella sintesi:** il fork e' pulito e i riferimenti visibili sono passati da 184 a 10, tutti
+endpoint o costanti di migrazione. La UI dell'add-on non e' piu' un pannello prodotto di terzi ma tre
+cose sole: stato, identificativo hardware, e l'ingresso al portale Sweetplace. Il claim resta a due
+fattori — dispositivo piu' email — e cio' che si automatizza e' l'identificazione del dispositivo,
+non la prova di chi lo possiede.
+
+**Lasciato aperto:** il sigillo hardware sull'identita', concordato ma non ancora scritto, e la
+lettura del parametro `?mac=` lato portale, senza la quale il pannello promette un riconoscimento che
+non avviene.

@@ -12,4 +12,4 @@ In cima i più fermi, sono quelli che guadagnano di più da un giro di revisione
 
 | | Documento | Rev | Fermo dal | Issue |
 |---|---|---|---|---|
-| 🔄 | [Sweetlink parla con i server di Homeway: cosa cambia se smettiamo](dipendenza-da-homeway.md) | r2 | 2026-08-22 | [#5](https://github.com/6773939989/sweetplace/issues/5) |
+| 🔄 | [Sweetlink parla con i server di Homeway: cosa cambia se smettiamo](dipendenza-da-homeway.md) | r3 | 2026-08-22 | [#5](https://github.com/6773939989/sweetplace/issues/5) |
