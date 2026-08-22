@@ -1,7 +1,7 @@
 import os
 import logging
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from sweetlink.mdns import MDns
 from sweetlink.sentry import Sentry
@@ -37,31 +37,111 @@ from .cloudflaremanager import CloudflareManager
 # This file is the main host for the linux service.
 class LinuxHost(IStateChangeHandler):
 
-    # Restituisce i MAC delle interfacce di rete fisiche, in maiuscolo.
-    # E' l'unica identita' che NON si copia insieme all'immagine della scheda SD, quindi e'
-    # cio' su cui si appoggiano la registrazione dell'hub e il riconoscimento del dispositivo.
+    # Bit meno significativo del primo ottetto (I/G in IEEE 802): se acceso, l'indirizzo non
+    # designa una singola scheda e non puo' essere l'indirizzo di una stazione.
+    c_MacBitMulticast = 0x01
+
+    # Valore di /sys/class/net/<if>/addr_assign_type che il kernel usa per NET_ADDR_PERM:
+    # l'indirizzo viene dall'hardware ed e' permanente. Gli altri valori (1 random, 2 stolen,
+    # 3 set via software) indicano indirizzi che possono cambiare fra un avvio e l'altro.
+    c_MacAssignPermanent = "0"
+
+
+    # Vero se la stringa ha la forma di un indirizzo MAC di stazione.
+    # Non dice nulla sulla stabilita': quella la stabilisce il kernel, vedi GetHardwareMacs.
+    @staticmethod
+    def IsWellFormedMac(mac:str) -> bool:
+        if len(mac) != 17:
+            return False
+        parts = mac.split(":")
+        if len(parts) != 6:
+            return False
+        for p in parts:
+            if len(p) != 2:
+                return False
+            try:
+                int(p, 16)
+            except ValueError:
+                return False
+        if mac == "00:00:00:00:00:00":
+            return False
+        # Un indirizzo multicast non e' l'indirizzo di una scheda. E' anche il segno che
+        # uuid.getnode() ha inventato un numero casuale invece di leggere l'hardware.
+        if int(parts[0], 16) & LinuxHost.c_MacBitMulticast:
+            return False
+        return True
+
+
+    # Il MAC che il pannello mostra e passa al portale. E' quello con cui il reporter si e'
+    # registrato davvero; prima che il reporter parta si ripiega sulla scansione, cosi' il
+    # pannello e' utile fin dal primo secondo. Stringa vuota se non c'e' nulla di determinabile.
+    def GetPanelMac(self) -> str:
+        reported = self.ReportedMacs
+        if len(reported) > 0:
+            return reported[0]
+        hardware = LinuxHost.GetHardwareMacs()
+        if len(hardware) > 0:
+            return hardware[0]
+        return ""
+
+
+    # Restituisce i MAC delle schede di rete fisiche, in maiuscolo, ordinati e senza duplicati.
+    # Puo' restituire una lista VUOTA: e' un esito legittimo e va gestito da chi chiama.
+    #
+    # E' l'unica identita' che NON si copia insieme all'immagine della scheda SD, quindi e' cio'
+    # su cui si appoggiano la registrazione dell'hub e il riconoscimento del dispositivo. Per
+    # questo qui non si tira mai a indovinare: meglio nessun MAC che uno inventato.
     @staticmethod
     def GetHardwareMacs() -> List[str]:
-        macs:List[str] = []
-        # Solo interfacce fisiche: esclude le reti virtuali di Docker e delle VPN.
+        macs:Set[str] = set()
         if os.path.exists('/sys/class/net/'):
             for interface in os.listdir('/sys/class/net/'):
-                if interface.startswith(('eth', 'wlan', 'en', 'wl')):
-                    macPath = os.path.join('/sys/class/net/', interface, 'address')
-                    if os.path.exists(macPath):
-                        try:
-                            with open(macPath, 'r', encoding="utf-8") as f:
-                                mac = f.read().strip().upper()
-                                if len(mac) == 17:
-                                    macs.append(mac)
-                        except Exception:
-                            pass
-        # Se la scansione non trova nulla, ripiega sull'unico MAC che python sa dedurre.
-        if not macs:
-            import uuid
-            macNum = hex(uuid.getnode()).replace('0x', '').upper()
-            macs.append(':'.join(macNum[i:i + 2] for i in range(0, 11, 2)).zfill(17))
-        return macs
+                if not interface.startswith(('eth', 'wlan', 'en', 'wl')):
+                    continue
+                basePath = os.path.join('/sys/class/net/', interface)
+                try:
+                    with open(os.path.join(basePath, 'address'), 'r', encoding="utf-8") as f:
+                        mac = f.read().strip().upper()
+                except Exception:
+                    continue
+                if not LinuxHost.IsWellFormedMac(mac):
+                    continue
+
+                # Chiediamo al kernel se l'indirizzo viene dall'hardware o se e' stato generato.
+                # E' la distinzione che serve davvero: "localmente amministrato" NON vuol dire
+                # instabile. Il MAC 52:54:00:xx di una macchina virtuale QEMU e' localmente
+                # amministrato ma sta scritto nella configurazione della VM e non cambia mai,
+                # mentre un'interfaccia con indirizzo casuale cambia a ogni avvio.
+                # Se l'attributo non c'e' (kernel molto vecchio) non escludiamo nulla: meglio
+                # accettare un indirizzo in piu' che rifiutare l'unico che il dispositivo ha.
+                assignPath = os.path.join(basePath, 'addr_assign_type')
+                if os.path.exists(assignPath):
+                    try:
+                        with open(assignPath, 'r', encoding="utf-8") as f:
+                            if f.read().strip() != LinuxHost.c_MacAssignPermanent:
+                                continue
+                    except Exception:
+                        pass
+                macs.add(mac)
+        return sorted(macs)
+
+
+    # Ripiego usato SOLO per la registrazione, quando la scansione non trova nessuna scheda
+    # fisica: senza almeno un identificativo il backend rifiuta la chiamata e l'hub non
+    # esisterebbe affatto.
+    #
+    # Non va usato per riconoscere il dispositivo: la documentazione di uuid.getnode() dice che
+    # quando non riesce a leggere un indirizzo hardware ne inventa uno casuale con il bit
+    # multicast acceso, e quel valore cambia a ogni avvio. Restituiamo None in quel caso, cosi'
+    # chi cerca un'identita' stabile non riceve un numero casuale scambiandolo per hardware.
+    @staticmethod
+    def GetFallbackMac() -> Optional[str]:
+        import uuid
+        macNum = hex(uuid.getnode()).replace('0x', '').upper().zfill(12)
+        mac = ':'.join(macNum[i:i + 2] for i in range(0, 12, 2))
+        if not LinuxHost.IsWellFormedMac(mac):
+            return None
+        return mac
 
 
     def __init__(self, addonDataRootDir:str, logsDir:str, addonType:int, devConfig:Optional[Dict[str,Any]]) -> None:
@@ -73,6 +153,11 @@ class LinuxHost(IStateChangeHandler):
 
         # Indicates if we are running as the Home Assistant addon, or standalone docker or cli.
         self.AddonType = addonType
+
+        # I MAC con cui l'hub si e' effettivamente registrato, aggiornati a ogni giro del
+        # reporter. Il pannello legge questi e non una copia presa all'avvio, altrimenti
+        # mostrerebbe un valore diverso da quello con cui il dispositivo e' nel database.
+        self.ReportedMacs:List[str] = []
 
         try:
             # First, we need to load our config.
@@ -178,9 +263,7 @@ class LinuxHost(IStateChangeHandler):
             # trascriverlo a mano, che e' il passaggio piu' fragile dell'onboarding.
             onboardApiUrl = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
-            # Ordinati, cosi' lo stesso hub produce sempre lo stesso link.
-            primaryMac = sorted(LinuxHost.GetHardwareMacs())[0]
-            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, primaryMac)
+            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.
@@ -289,16 +372,11 @@ class LinuxHost(IStateChangeHandler):
                 try:
                     import requests, time
 
-                    macs = LinuxHost.GetHardwareMacs()
-
                     # Submit an empty URL to let the cloud backend preserve any pre-configured custom tunnel domain (Zero-Touch AppURL)
                     app_url = ""
 
                     # Check for explicit API or fallback to presumed production URL
                     api_url = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
-                    payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
-
-                    self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
 
                     # Ritenta finche' la registrazione non va a buon fine, poi la ripete a bassa
                     # frequenza. Servono entrambe le cose, per due motivi diversi.
@@ -313,11 +391,32 @@ class LinuxHost(IStateChangeHandler):
                     # a rimediare ai due casi in cui uno sparo solo non basta: un MAC che compare
                     # dopo l'avvio (dongle USB, Wi-Fi alzato dopo) non avrebbe mai la sua riga,
                     # e una riga persa lato server non verrebbe mai ricreata.
+                    #
+                    # La scansione dei MAC sta DENTRO il ciclo, non fuori: se stesse fuori, un
+                    # avvio senza schede rilevate non riproverebbe mai, e il rimedio descritto
+                    # sopra resterebbe una promessa del commento invece di un comportamento.
                     RIPETIZIONE_SEC = 6 * 60 * 60
                     RITENTATIVO_SEC = 60
                     while True:
                         attesaSec = RITENTATIVO_SEC
                         try:
+                            macs = LinuxHost.GetHardwareMacs()
+                            if len(macs) == 0:
+                                # Nessuna scheda con indirizzo permanente. Puo' essere transitorio
+                                # (Wi-Fi non ancora associato, dongle non ancora enumerato), quindi
+                                # si riprova al giro dopo invece di rinunciare.
+                                fallback = LinuxHost.GetFallbackMac()
+                                if fallback is None:
+                                    self.Logger.warning(f"Sweetplace Onboarding: nessun indirizzo hardware determinabile, riprovo fra {RITENTATIVO_SEC}s...")
+                                    time.sleep(RITENTATIVO_SEC)
+                                    continue
+                                self.Logger.warning("Sweetplace Onboarding: nessuna scheda con indirizzo permanente, uso l'indirizzo di ripiego.")
+                                macs = [fallback]
+
+                            self.ReportedMacs = macs
+                            payload = {"macs": macs, "plugin_id": pluginId, "app_url": app_url, "private_key": privateKey}
+                            self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
+
                             response = requests.post(api_url, json=payload, timeout=10)
                             registrato = False
                             if response.ok:
@@ -363,6 +462,8 @@ class LinuxHost(IStateChangeHandler):
             
             self.CloudflareInstance = CloudflareManager(self.Logger)
             self.CloudflareInstance.Start(baseApiUrl, plugin_id=pluginId)
+            # Il pannello mostra l'indirizzo pubblico dell'hub, che solo il manager conosce.
+            self.WebServer.SetCloudflareManager(self.CloudflareInstance)
             
             
             pluginConnectUrl = HostCommon.GetPluginConnectionUrl()

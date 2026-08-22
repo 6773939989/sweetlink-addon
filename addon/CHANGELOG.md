@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.45
+
+- 🌐 Il pannello mostra l'indirizzo pubblico con cui l'hub è raggiungibile da Internet, accanto all'identificativo hardware.
+- 🔍 Riconoscimento del dispositivo più affidabile: vengono usati solo gli indirizzi di rete che il sistema dichiara permanenti, ignorando quelli generati da Docker e dalle reti virtuali.
+- 🔁 La registrazione riprova anche quando all'avvio nessuna scheda di rete è ancora pronta, invece di rinunciare.
+
 ## 2.7.44
 
 - 🧾 Cronologia delle versioni ripulita: restano le note che riguardano davvero questo add-on.

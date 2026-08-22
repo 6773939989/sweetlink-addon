@@ -6,6 +6,7 @@ import logging
 import requests
 import json
 from enum import Enum
+from typing import Optional
 
 class CloudflareStatus(Enum):
     STOPPED = 1
@@ -30,6 +31,13 @@ class CloudflareManager:
         self.MacAddress = None
         self.PluginId = None
         self.ApiUrl = None
+
+        # Indirizzo pubblico con cui l'hub e' raggiungibile da Internet. Lo assegna il backend
+        # nella risposta al provisioning: senza tenerlo, l'hub conosce il proprio indirizzo e non
+        # lo dice a nessuno, e per saperlo bisogna interrogare il database. Lo legge il pannello.
+        # Scritto dal thread del manager e letto dal thread del web server: e' una sola
+        # assegnazione di stringa, non serve il lock.
+        self.PublicUrl:Optional[str] = None
         
         self._shutdown_event = threading.Event()
         
@@ -146,6 +154,13 @@ class CloudflareManager:
             res = requests.post(endpoint, json=payload, timeout=15)
             if res.status_code == 200:
                 data = res.json()
+                # Il valore arriva dalla rete: va validato qui, non dove viene mostrato.
+                domain = data.get("domain", None)
+                if isinstance(domain, str) and domain.startswith("https://"):
+                    self.PublicUrl = domain
+                    self.Logger.info(f"[CloudflareManager] Indirizzo pubblico dell'hub: {domain}")
+                elif domain is not None:
+                    self.Logger.warning(f"[CloudflareManager] Indirizzo pubblico inatteso dal backend, ignorato: {domain!r}")
                 return data.get("token", "")
             elif res.status_code == 503:
                 # Disabled administratively

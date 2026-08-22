@@ -4,7 +4,9 @@ import logging
 import threading
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any, Dict, Optional
+from html import escape
+from typing import Any, Callable, Dict, Optional
+from urllib.parse import quote
 
 from sweetlink.commandhandler import CommandHandler
 from sweetlink.interfaces import IAccountLinkStatusUpdateHandler
@@ -20,7 +22,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     # A static instance var for the handler class to access this class.
     Instance:"WebServer" = None # type: ignore[reportClassAttributeMissing]
 
-    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, primaryMac:str) -> None:
+    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str]) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
@@ -28,7 +30,13 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # Il claim si chiude sul portale Sweetplace: il pannello ci manda il cliente con il MAC
         # gia' compilato, cosi' l'unica cosa che deve inserire e' la propria email.
         self.OnboardBaseUrl = onboardBaseUrl
-        self.PrimaryMac = primaryMac
+        # Letto a ogni disegno della pagina, non copiato all'avvio: il MAC con cui l'hub si
+        # registra puo' comparire dopo (Wi-Fi associato piu' tardi, dongle USB inserito), e il
+        # pannello deve mostrare quello vero, non quello che c'era al secondo zero.
+        self.MacProvider = macProvider
+        # Impostato dopo l'avvio: il manager del tunnel nasce dopo il web server ed e' l'unico
+        # a conoscere l'indirizzo pubblico dell'hub, che riceve dal backend.
+        self.CloudflareManager:Optional[Any] = None
         self.AccountConnected = False
         self.IsPendingStartup = True
         self.webServerThread:Optional[threading.Thread] = None
@@ -51,6 +59,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # Start the web server worker thread.
         self.webServerThread = threading.Thread(target=self._WebServerWorker)
         self.webServerThread.start()
+
+
+    def SetCloudflareManager(self, manager:Any) -> None:
+        self.CloudflareManager = manager
 
 
     def RegisterForAccountStatusUpdates(self) -> None:
@@ -144,7 +156,25 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            onboardUrl = f"{WebServer.Instance.OnboardBaseUrl}/?mac={WebServer.Instance.PrimaryMac}"
+            mac = WebServer.Instance.MacProvider()
+            onboardUrl = WebServer.Instance.OnboardBaseUrl + "/"
+            if len(mac) > 0:
+                onboardUrl += "?mac=" + quote(mac, safe="")
+            macText = mac if len(mac) > 0 else "non rilevato"
+
+            # L'indirizzo pubblico arriva dal backend insieme al token del tunnel: finche' il
+            # tunnel non e' salito non lo conosciamo.
+            publicUrl = None
+            manager = WebServer.Instance.CloudflareManager
+            if manager is not None:
+                publicUrl = manager.PublicUrl
+            if not isinstance(publicUrl, str) or len(publicUrl) == 0:
+                publicUrlHtml = "in attesa del tunnel..."
+            elif publicUrl.startswith("https://"):
+                publicUrlHtml = f'<a href="{escape(publicUrl, quote=True)}" target="_blank" class="blueLink">{escape(publicUrl)}</a>'
+            else:
+                # Indirizzo inatteso: lo mostriamo come testo, mai come link.
+                publicUrlHtml = escape(publicUrl)
             # Il MAC e il pulsante di configurazione sono dati locali e non dipendono da nessun
             # servizio remoto: restano sempre visibili. Lo stato di avvio governa solo la riga di
             # stato e la ricarica automatica, altrimenti un hub che non riesce a collegarsi
@@ -313,7 +343,14 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             <div class="featureHolder">
                 <div>
                     <div class="featureHeader">Identificativo hardware</div>
-                    <div class="featureDetails" style="word-break: break-all;">"""+WebServer.Instance.PrimaryMac+"""</div>
+                    <div class="featureDetails" style="word-break: break-all;">"""+escape(macText)+"""</div>
+                </div>
+            </div>
+
+            <div class="featureHolder">
+                <div>
+                    <div class="featureHeader">Indirizzo pubblico</div>
+                    <div class="featureDetails" style="word-break: break-all;">"""+publicUrlHtml+"""</div>
                 </div>
             </div>
         </div>
