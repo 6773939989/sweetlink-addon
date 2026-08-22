@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.47
+
+- 🔁 Se l'identità dell'hub risulta duplicata, la ricostruzione ora si completa da sola: l'add-on rigenera le proprie credenziali e si riavvia perché tutto le adotti, senza bisogno di interventi.
+- 🔌 Il riconoscimento del dispositivo ignora le schede di rete rimovibili: un adattatore USB spostato da un apparecchio all'altro non lo confonde più.
+
 ## 2.7.46
 
 - 🔐 L'identità dell'hub è ora legata all'apparecchio su cui è nata: se l'immagine della scheda viene clonata su un altro dispositivo, il clone se ne accorge al primo avvio e si rigenera identità e chiave da solo.

@@ -47,6 +47,35 @@ class LinuxHost(IStateChangeHandler):
     c_MacAssignPermanent = "0"
 
 
+    # Chiede al Supervisor di riavviare questo add-on, e dice se la richiesta e' stata accettata.
+    #
+    # Serve dopo aver rigenerato l'identita': plugin_id e private_key vengono letti all'avvio da
+    # una decina di componenti (worker cloud, manager del tunnel, connessione remota, telemetria)
+    # che tengono la propria copia. Cambiarli sotto i piedi senza ripartire lascerebbe l'hub
+    # registrato con l'identita' nuova e operativo con quella vecchia: peggio del problema.
+    #
+    # Non si esce e basta: il riavvio automatico dipende dal watchdog, che e' un'impostazione
+    # dell'utente ed e' spenta di default. Un add-on che esce contando su quello resta spento.
+    @staticmethod
+    def RequestSelfRestart(logger:logging.Logger) -> bool:
+        try:
+            import requests
+            token = os.environ.get("SUPERVISOR_TOKEN", "")
+            if len(token) == 0:
+                logger.error("Riavvio: SUPERVISOR_TOKEN assente, non posso chiedere il riavvio.")
+                return False
+            response = requests.post("http://supervisor/addons/self/restart",
+                                     headers={"Authorization": f"Bearer {token}"}, timeout=30)
+            if response.ok:
+                logger.info("Riavvio dell'add-on richiesto al Supervisor.")
+                return True
+            logger.error(f"Riavvio: il Supervisor ha risposto HTTP {response.status_code}.")
+            return False
+        except Exception as e:
+            logger.error(f"Riavvio: richiesta al Supervisor fallita: {e}")
+            return False
+
+
     # Vero se la stringa ha la forma di un indirizzo MAC di stazione.
     # Non dice nulla sulla stabilita': quella la stabilisce il kernel, vedi GetHardwareMacs.
     @staticmethod
@@ -86,13 +115,18 @@ class LinuxHost(IStateChangeHandler):
 
 
     # Restituisce i MAC delle schede di rete fisiche, in maiuscolo, ordinati e senza duplicati.
+    #
+    # Con includeRemovable=False esclude le schede su bus rimovibile: e' la forma da usare per il
+    # vincolo hardware, dove un dongle USB spostato fra apparecchi falserebbe il riconoscimento.
+    # Per la registrazione servono invece tutti gli indirizzi, perche' sono quelli con cui il
+    # cliente identifica il proprio hub.
     # Puo' restituire una lista VUOTA: e' un esito legittimo e va gestito da chi chiama.
     #
     # E' l'unica identita' che NON si copia insieme all'immagine della scheda SD, quindi e' cio'
     # su cui si appoggiano la registrazione dell'hub e il riconoscimento del dispositivo. Per
     # questo qui non si tira mai a indovinare: meglio nessun MAC che uno inventato.
     @staticmethod
-    def GetHardwareMacs() -> List[str]:
+    def GetHardwareMacs(includeRemovable:bool=True) -> List[str]:
         macs:Set[str] = set()
         if os.path.exists('/sys/class/net/'):
             for interface in os.listdir('/sys/class/net/'):
@@ -122,8 +156,32 @@ class LinuxHost(IStateChangeHandler):
                                 continue
                     except Exception:
                         pass
+                if includeRemovable is False and LinuxHost.IsRemovableInterface(basePath):
+                    continue
                 macs.add(mac)
         return sorted(macs)
+
+
+    # Vero se l'interfaccia sta su un bus rimovibile, in pratica USB.
+    #
+    # Serve per il vincolo hardware, non per la registrazione. Un dongle USB spostato da un hub
+    # all'altro porta con se' il proprio MAC, e per il vincolo sembrerebbe continuita' hardware:
+    # e' esattamente il caso in cui, in laboratorio, si prepara un apparecchio e poi si usa lo
+    # stesso dongle sul successivo. Legandosi solo alle schede integrate quella confusione non
+    # nasce, e chi guarda da fuori puo' distinguere senza ambiguita' un hardware sostituito da
+    # due apparecchi distinti.
+    @staticmethod
+    def IsRemovableInterface(basePath:str) -> bool:
+        try:
+            devicePath = os.path.join(basePath, 'device')
+            if not os.path.exists(devicePath):
+                # Nessun dispositivo dietro l'interfaccia: non e' hardware integrato.
+                return True
+            return "/usb" in os.path.realpath(devicePath).replace("\\", "/").lower()
+        except Exception:
+            # Nel dubbio la trattiamo come integrata: escludere per errore l'unica scheda di un
+            # apparecchio lo lascerebbe senza vincolo.
+            return False
 
 
     # Ripiego usato SOLO per la registrazione, quando la scansione non trova nessuna scheda
@@ -457,8 +515,18 @@ class LinuxHost(IStateChangeHandler):
                                 self.Secrets.SetPluginId(None)
                                 self.Secrets.SetPrivateKey(None)
                                 self.DoFirstTimeSetupIfNeeded()
-                                self.Secrets.SetBoundMacs(macs)
-                                # Senza attesa: la nuova identita' non puo' collidere di nuovo.
+                                # Il vincolo si lega alle sole schede integrate, come fa il
+                                # controllo all'avvio: legare qui un indirizzo che quel controllo
+                                # non vedra' mai gli farebbe rigenerare tutto un'altra volta.
+                                self.Secrets.SetBoundMacs(LinuxHost.GetHardwareMacs(includeRemovable=False))
+                                self.Logger.error("Sweetplace Onboarding: identita' rigenerata. Riavvio l'add-on per applicarla ovunque.")
+                                if LinuxHost.RequestSelfRestart(self.Logger):
+                                    # Il Supervisor sta per fermarci: non serve altro.
+                                    return
+                                # Se il riavvio non e' possibile continuiamo comunque a
+                                # registrarci: l'hub resta a meta' strada fino al prossimo avvio,
+                                # ma almeno risulta censito e il backend puo' segnalarlo.
+                                self.Logger.error("Sweetplace Onboarding: riavvio non riuscito. L'identita' nuova sara' pienamente attiva solo dopo un riavvio manuale.")
                                 continue
                             elif response.status_code == 409:
                                 self.Logger.error(f"Sweetplace Onboarding: identita' ancora in collisione dopo {MAX_RIGENERAZIONI} tentativi di rigenerazione. Mi fermo per non ciclare.")
@@ -553,7 +621,7 @@ class LinuxHost(IStateChangeHandler):
 
 
     def _EnforceHardwareBondIfNeeded(self) -> None:
-        currentMacs = LinuxHost.GetHardwareMacs()
+        currentMacs = LinuxHost.GetHardwareMacs(includeRemovable=False)
         if len(currentMacs) == 0:
             self.Logger.warning("Hardware bond: nessun indirizzo di rete permanente leggibile, controllo saltato.")
             return
