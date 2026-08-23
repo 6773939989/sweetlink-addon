@@ -35,6 +35,18 @@ Privato: tutto il resto del monorepo — il backend cloud `onboarding/`, `core/`
 `installatori/`, `ha-themes/`. Su GitHub la visibilità è del repository, non della cartella:
 non esiste una cartella pubblica dentro un repo privato, e viceversa.
 
+**Eccezione dentro `sweetlink/`**: i documenti di lavoro interni elencati qui sotto vengono
+rimossi dal workflow prima del commit sul repo pubblico. Chi ne aggiunge uno deve aggiungerlo
+anche al passo *Pubblica* del workflow, altrimenti finisce online.
+
+| Percorso | Perché resta interno |
+|---|---|
+| `brainstorm/` | ragionamenti di progetto in corso: **mai** sul repo pubblico, senza eccezioni |
+| `SECURITY_REVIEW.md` | elenca falle non ancora corrette |
+
+Per `brainstorm/` il workflow ha anche una rete di sicurezza: se dopo la pulizia resta una
+cartella con quel nome a qualunque livello, la pubblicazione si ferma con errore.
+
 ## Come si pubblica
 
 **Automaticamente**, tramite `.github/workflows/publish-sweetlink.yaml` nel monorepo: a ogni
@@ -85,6 +97,10 @@ git remote add sweetlink-pub https://github.com/6773939989/sweetlink-addon
 > ⚠️ Il prefisso è `sweetlink`, **non** `sweetlink/addon`. Con il prefisso sbagliato il repo
 > risultante avrebbe `config.yaml` alla root e nessun `repository.yaml`: Home Assistant non lo
 > riconoscerebbe come add-on repository.
+
+> ⚠️ La `subtree split` porta con sé **tutto** `sweetlink/`, compresi i documenti interni che il
+> workflow esclude (vedi tabella sopra). Prima di pushare a mano vanno tolti dal branch di split,
+> altrimenti diventano pubblici.
 
 ### Verifica dopo la pubblicazione
 
