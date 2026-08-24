@@ -18,6 +18,7 @@ from sweetlink.Proto.AddonTypes import AddonTypes
 from sweetlink.commandhandler import CommandHandler
 from sweetlink.interfaces import IStateChangeHandler
 
+from .backend import Backend
 from .config import Config
 from .secrets import Secrets
 from .version import Version
@@ -348,7 +349,7 @@ class LinuxHost(IStateChangeHandler):
             # Il pannello ha bisogno di sapere a quale indirizzo mandare il cliente per il claim
             # e con quale MAC identificarsi: il MAC lo conosciamo gia', cosi' il cliente non deve
             # trascriverlo a mano, che e' il passaggio piu' fragile dell'onboarding.
-            onboardApiUrl = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+            onboardApiUrl = Backend.DevicePingUrl()
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
             self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac,
                                        self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin)
@@ -465,7 +466,7 @@ class LinuxHost(IStateChangeHandler):
                     app_url = ""
 
                     # Check for explicit API or fallback to presumed production URL
-                    api_url = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+                    api_url = Backend.DevicePingUrl()
 
                     # Ritenta finche' la registrazione non va a buon fine, poi la ripete a bassa
                     # frequenza. Servono entrambe le cose, per due motivi diversi.
@@ -593,7 +594,7 @@ class LinuxHost(IStateChangeHandler):
             # Start the manager thread that requests the JWT Token and spawns cloudflared
             # We pass the plugin_id so the backend can resolve the correct MAC/tunnel.
             # Using uuid.getnode() was unreliable on multi-NIC devices (picked wrong MAC).
-            apiURLString = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
+            apiURLString = Backend.DevicePingUrl()
             baseApiUrl = apiURLString.rsplit('/device', 1)[0]
             
             self.CloudflareInstance = CloudflareManager(self.Logger)

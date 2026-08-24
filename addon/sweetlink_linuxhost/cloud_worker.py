@@ -4,6 +4,8 @@ import json
 import threading
 import requests
 import socketio
+
+from .backend import Backend
 import random
 import urllib3
 
@@ -511,7 +513,10 @@ class CloudWorker:
             self.sio.emit('command_generate_password_result', {'reqId': req_id, 'success': False, 'error': str(e)})
 
     def _run_loop(self):
-        cloud_url = "https://sweetplace-starthere.up.railway.app"
+        # La socket del worker e il reporter devono parlare con lo STESSO backend:
+        # quando erano due costanti separate, puntarne una sola a un ambiente di prova
+        # lasciava l'hub registrato di qua e connesso di la', senza nessun errore.
+        cloud_url = Backend.BaseUrl()
         self.logger.info(f"[CloudWorker] Connecting to {cloud_url}...")
         
         while self._running:
