@@ -1,10 +1,8 @@
 ---
 # Costruisce e pubblica l'immagine dell'add-on su GitHub Container Registry.
 #
-# ATTENZIONE: questo file vive nel monorepo privato sotto sweetlink/.github/workflows/.
-# GitHub Actions esegue solo i workflow in .github/workflows/ ALLA ROOT di un repository:
-# nel monorepo questo file e' quindi inerte, e diventa attivo solo nel repo pubblico
-# sweetlink-addon, dove la subtree split lo porta alla root. Vedi PUBLISHING.md.
+# Questo repository e' generato automaticamente dal processo di rilascio: non modificare
+# qui, le modifiche vengono sovrascritte alla pubblicazione successiva.
 #
 # Il tag dell'immagine e' preso da `version:` in addon/config.yaml, perche' e' esattamente
 # il tag che il Supervisor di Home Assistant cerca quando `image:` e' attiva.

@@ -1,18 +1,9 @@
 <h1 align="left" style="margin-bottom:20px">Sweetlink (Homeway.io Fork)</h1>
 
-> ### 📦 Questo contenuto esiste in due posti, con ruoli diversi
->
-> | | Dove | Ruolo |
-> |---|---|---|
-> | **Fonte** | monorepo privato `sweetplace`, cartella `sweetlink/` | **è qui che si lavora** |
-> | **Pubblicazione** | [`github.com/6773939989/sweetlink-addon`](https://github.com/6773939989/sweetlink-addon) (pubblico) | **output generato**, serve solo a far scaricare l'add-on agli hub |
->
-> Il repository pubblico è **rigenerato** dal monorepo a ogni rilascio. Qualsiasi modifica
-> fatta direttamente lì viene **persa** alla pubblicazione successiva. Esiste per un solo
-> motivo: il Supervisor di Home Assistant clona il repository in anonimo, quindi deve essere
-> pubblico per poter aggiornare gli hub.
->
-> Procedura di pubblicazione e regole: **[PUBLISHING.md](PUBLISHING.md)**.
+> **Note:** the public repository [`6773939989/sweetlink-addon`](https://github.com/6773939989/sweetlink-addon)
+> is generated automatically by the release process and exists only so that Home Assistant can
+> install and update the add-on. It does not accept contributions: any change made there is
+> overwritten at the next release.
 
 Sweetlink is a custom fork of the official [Homeway.io](https://homeway.io) Home Assistant Add-on, tailored specifically for the Sweetplace ecosystem. 
 

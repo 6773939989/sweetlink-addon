@@ -1,4 +1,6 @@
+import io
 import os
+import tempfile
 import threading
 import logging
 
@@ -83,6 +85,18 @@ class Secrets:
         self._SetStr(Secrets.SecretsSection, Secrets.BoundMacsKey, ",".join(cleaned))
 
 
+    # Dimentica quello che tiene in memoria e rilegge dal disco alla prossima richiesta.
+    #
+    # Serve dopo l'azzeramento per la clonazione. Il caricamento e' pigro e si ferma alla prima
+    # volta (_LoadConfigIfNeeded_UnderLock esce subito se Config non e' None), quindi dopo aver
+    # cancellato il file l'oggetto continua a portarsi dietro identita' e chiave: la prima
+    # scrittura di un qualsiasi altro valore le riscriverebbe tutte sul disco, resuscitando
+    # esattamente cio' che si era appena tolto.
+    def Forget(self) -> None:
+        with self.ConfigLock:
+            self.Config = None #pyright: ignore[reportAttributeAccessIssue]
+
+
     # Gets a value from the config given the header and key.
     # If the value doesn't exist, None is returned.
     def _GetStr(self, section:str, key:str) -> Optional[str]:
@@ -138,29 +152,72 @@ class Secrets:
         if self.Config is None:
             return
 
-        # Write the current settings to the file.
-        # This lets the config lib format everything how it wants.
-        with open(self.SecretFilePath, 'w', encoding="utf-8") as f:
-            self.Config.write(f)
+        # Il contenuto si costruisce tutto in memoria, e solo alla fine tocca il disco.
+        # Questo file e' l'unica copia dell'identita' dell'hub: la versione precedente lo
+        # troncava due volte per ogni valore scritto, e un arresto in una di quelle due
+        # finestre lasciava sulla scheda un file vuoto o a meta', cioe' un hub che al
+        # riavvio non sa piu' chi e'.
+        buffer = io.StringIO()
+        self.Config.write(buffer)
 
-        # After writing, read the file and insert any comments we have.
+        # Reinserisce i commenti sopra le chiavi che ne hanno uno. Si itera su uno StringIO
+        # invece che su splitlines() perche' spezza le righe solo sul carattere di a capo:
+        # splitlines() spezzerebbe anche su \x0b, \x0c, \x85 e i separatori unicode,
+        # e un valore che ne contenesse uno finirebbe diviso in due righe di configurazione.
         finalOutput = ""
-        with open(self.SecretFilePath, 'r', encoding="utf-8") as f:
-            # Read all lines
-            lines = f.readlines()
-            for line in lines:
-                lineLower = line.lower()
-                # If anything in the line matches the target, add the comment just before this line.
-                for cObj in Secrets.c_SecretsConfigComments:
-                    if cObj["Target"] in lineLower:
-                        # Add the comment.
-                        finalOutput += "# " + cObj["Comment"] + os.linesep
-                        break
-                finalOutput += line
+        for line in io.StringIO(buffer.getvalue()):
+            lineLower = line.lower()
+            # If anything in the line matches the target, add the comment just before this line.
+            for cObj in Secrets.c_SecretsConfigComments:
+                if cObj["Target"] in lineLower:
+                    # Add the comment.
+                    finalOutput += "# " + cObj["Comment"] + os.linesep
+                    break
+            finalOutput += line
 
-        # Finally, write the file back one more time.
-        with open(self.SecretFilePath, 'w', encoding="utf-8") as f:
-            f.write(finalOutput)
+        self._WriteAtomically_UnderLock(finalOutput)
 
-        # Clear the final output so we don't keep it in memory.
-        finalOutput = None
+
+    # Sostituisce il file dei segreti in un colpo solo.
+    # Scrive un file temporaneo accanto a quello vero, lo forza sul disco, e solo allora lo
+    # rinomina sopra l'originale: os.replace e' atomica, quindi chi legge trova sempre o la
+    # versione precedente per intero o quella nuova per intero, mai una via di mezzo.
+    def _WriteAtomically_UnderLock(self, contents:str) -> None:
+        # Il temporaneo ha un nome unico invece di un ".tmp" fisso. Il lock e' per istanza, non
+        # per file, quindi due oggetti Secrets sullo stesso percorso non si escludono a vicenda:
+        # con un nome condiviso potrebbero scriverci sopra a vicenda e far arrivare sul file
+        # vero un ibrido delle due versioni, cioe' proprio il danno che questa funzione evita.
+        # mkstemp lo crea anche a 0600, e os.replace porta quei permessi sul file finale: il
+        # file dei segreti smette di essere leggibile da chiunque, come avrebbe sempre dovuto.
+        directory = os.path.dirname(self.SecretFilePath) or "."
+        fd, tempFilePath = tempfile.mkstemp(dir=directory, prefix=Secrets.FileName + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, 'w', encoding="utf-8") as f:
+                f.write(contents)
+                # Senza queste due righe il rename puo' raggiungere il disco prima dei dati:
+                # dopo un'interruzione di corrente il file esisterebbe, ma vuoto.
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tempFilePath, self.SecretFilePath)
+        except Exception:
+            # Il file precedente e' rimasto intatto, quindi si butta via solo lo scarto.
+            try:
+                if os.path.exists(tempFilePath):
+                    os.remove(tempFilePath)
+            except Exception:
+                pass
+            raise
+
+        # Rende durevole anche la voce di directory creata dal rename. Su Windows aprire una
+        # directory fallisce sempre, e li' non c'e' nessun hub da proteggere; su Linux invece
+        # un fallimento significa che il rename potrebbe non sopravvivere a un blackout, e
+        # tacerlo vorrebbe dire dichiarare una garanzia che non c'e'.
+        try:
+            dirFd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dirFd)
+            finally:
+                os.close(dirFd)
+        except OSError as e:
+            if os.name != "nt":
+                self.Logger.warning(f"fsync della cartella dei segreti fallito, il salvataggio potrebbe non sopravvivere a un'interruzione: {e}")

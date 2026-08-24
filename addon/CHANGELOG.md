@@ -1,6 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.48
+
+- 🧯 La preparazione dell'immagine da clonare è passata dal tab di configurazione alla pagina dell'add-on, e non è più un interruttore: mostra prima cosa c'è ancora sul disco che non deve essere duplicato, e chiede di scrivere una parola di conferma.
+- 🔒 L'azzeramento è riservato agli amministratori di Home Assistant: gli utenti creati con la configurazione guidata non possono raggiungerlo in nessun modo.
+- 🔑 L'azzeramento cancella anche la chiave privata di NetBird, che altrimenti finirebbe identica su tutti gli hub e li farebbe contendere lo stesso indirizzo nella rete privata.
+- 🏷️ Il pannello segnala quando il nome con cui l'hub compare nella rete privata NetBird non è quello previsto, così chi prepara l'apparecchio se ne accorge prima di consegnarlo.
+- 💾 Il file dei segreti viene ora sostituito in un colpo solo: un'interruzione di corrente durante il salvataggio non può più lasciare l'hub senza identità.
+
 ## 2.7.47
 
 - 🔁 Se l'identità dell'hub risulta duplicata, la ricostruzione ora si completa da sola: l'add-on rigenera le proprie credenziali e si riavvia perché tutto le adotti, senza bisogno di interventi.

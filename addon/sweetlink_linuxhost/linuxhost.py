@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 import traceback
 from typing import Any, Dict, List, Optional, Set
 
@@ -32,6 +33,9 @@ from .ha.homecontext import HomeContext
 from .ha.trackerinterceptor import TrackerInterceptor
 from .cloud_worker import CloudWorkerInstance
 from .cloudflaremanager import CloudflareManager
+from .haadmin import HaAdmin
+from .imageprep import ImagePrep
+from .supervisorapi import SupervisorApi
 
 
 # This file is the main host for the linux service.
@@ -58,22 +62,7 @@ class LinuxHost(IStateChangeHandler):
     # dell'utente ed e' spenta di default. Un add-on che esce contando su quello resta spento.
     @staticmethod
     def RequestSelfRestart(logger:logging.Logger) -> bool:
-        try:
-            import requests
-            token = os.environ.get("SUPERVISOR_TOKEN", "")
-            if len(token) == 0:
-                logger.error("Riavvio: SUPERVISOR_TOKEN assente, non posso chiedere il riavvio.")
-                return False
-            response = requests.post("http://supervisor/addons/self/restart",
-                                     headers={"Authorization": f"Bearer {token}"}, timeout=30)
-            if response.ok:
-                logger.info("Riavvio dell'add-on richiesto al Supervisor.")
-                return True
-            logger.error(f"Riavvio: il Supervisor ha risposto HTTP {response.status_code}.")
-            return False
-        except Exception as e:
-            logger.error(f"Riavvio: richiesta al Supervisor fallita: {e}")
-            return False
+        return SupervisorApi.RestartSelf(logger)
 
 
     # Vero se la stringa ha la forma di un indirizzo MAC di stazione.
@@ -112,6 +101,64 @@ class LinuxHost(IStateChangeHandler):
         if len(hardware) > 0:
             return hardware[0]
         return ""
+
+
+    # Dice se l'utente di Home Assistant indicato e' un amministratore.
+    # None quando non e' determinabile: chi chiama deve trattarlo come un no.
+    def IsHaUserAdmin(self, userId:str) -> Optional[bool]:
+        return HaAdmin.IsUserAdmin(self.Logger, self.HaConnection, userId)
+
+
+    # Il referto che il pannello mostra prima di clonare: cosa c'e' ancora sul disco che non
+    # deve finire dentro l'immagine. Non modifica niente.
+    def BuildImagePrepReport(self) -> List[Dict[str, str]]:
+        return ImagePrep.BuildReport(self.Logger, self.Secrets, LinuxHost.GetHardwareMacs())
+
+
+    # Azzera l'identita' di questo apparecchio e ferma l'add-on.
+    #
+    # L'arresto e' rimandato di qualche secondo perche' la risposta HTTP deve arrivare al
+    # pannello prima che il processo se ne vada: altrimenti chi ha premuto il pulsante vede una
+    # connessione caduta e non sa se l'operazione e' riuscita.
+    #
+    # Fermarsi e' necessario, non estetico: se l'add-on restasse vivo dopo l'azzeramento,
+    # rigenererebbe subito plugin_id e chiave privata, e l'immagine che si sta per clonare ne
+    # conterrebbe una nuova invece di nessuna.
+    def WipeForCloning(self) -> List[Dict[str, str]]:
+        if len(self.StorageDir) == 0:
+            # Non e' mai capitato e non dovrebbe capitare, ma un azzeramento a meta' e' molto
+            # peggio di un azzeramento che si rifiuta di partire.
+            self.Logger.error("Azzeramento rifiutato: la cartella dati non e' nota.")
+            return [{"level": ImagePrep.c_LevelBlock, "title": "Azzeramento",
+                     "detail": "Cartella dati non nota: non ho toccato niente. Riavvia l'add-on e riprova."}]
+
+        # Alzata PRIMA di cancellare, non dopo: fra la cancellazione e l'arresto il reporter e'
+        # ancora vivo, e sul suo percorso di collisione rigenererebbe l'identita' appena tolta.
+        self.WipedForCloning = True
+        actions = ImagePrep.Wipe(self.Logger, self.Secrets, self.StorageDir)
+
+        # Ci si ferma SOLO se e' andato tutto bene. Se qualcosa e' rimasto sul disco, l'unico
+        # strumento che l'operatore ha per capire cosa e' questo pannello, e spegnersi glielo
+        # toglierebbe di mano proprio nel momento in cui gli serve. Diversi messaggi gli dicono
+        # di ricontrollare il referto: quell'istruzione dev'essere eseguibile.
+        if ImagePrep.HasBlockers(actions):
+            self.Logger.error("Azzeramento incompleto: NON mi fermo, cosi' il referto resta consultabile.")
+            actions.append({"level": ImagePrep.c_LevelWarn, "title": "Arresto",
+                            "detail": "L'add-on resta acceso perche' tu possa rileggere il referto. Risolvi, riazzera, e spegni solo quando e' tutto verde."})
+            return actions
+
+        actions.append({"level": ImagePrep.c_LevelOk, "title": "Arresto",
+                        "detail": "L'add-on si sta fermando. Se questa pagina resta viva, l'arresto non e' riuscito: fermalo a mano prima di spegnere."})
+        threading.Timer(3.0, self._StopAfterWipe).start()
+        return actions
+
+
+    # Arresto differito, perche' la risposta HTTP deve arrivare al pannello prima che il
+    # processo se ne vada: altrimenti chi ha premuto il pulsante vede una connessione caduta e
+    # non sa se l'operazione e' riuscita.
+    def _StopAfterWipe(self) -> None:
+        if not SupervisorApi.StopSelf(self.Logger):
+            self.Logger.error("Azzeramento: l'add-on NON e' riuscito a fermarsi. Fermalo a mano prima di spegnere l'apparecchio.")
 
 
     # Restituisce i MAC delle schede di rete fisiche, in maiuscolo, ordinati e senza duplicati.
@@ -217,6 +264,19 @@ class LinuxHost(IStateChangeHandler):
         # mostrerebbe un valore diverso da quello con cui il dispositivo e' nel database.
         self.ReportedMacs:List[str] = []
 
+        # Valorizzata in RunBlocking, prima che il pannello esista: e' la cartella che
+        # l'azzeramento pre-clonazione svuota.
+        self.StorageDir:str = ""
+
+        # La connessione WebSocket verso Home Assistant, valorizzata in RunBlocking. Serve al
+        # pannello per chiedere se chi ha bussato e' un amministratore.
+        self.HaConnection:Optional[Connection] = None
+
+        # Vero dal momento in cui si azzera l'identita' per preparare la clonazione. Da li' in
+        # poi nessuna parte del programma deve piu' scrivere un'identita' sul disco, altrimenti
+        # finirebbe dentro l'immagine che si sta per duplicare.
+        self.WipedForCloning:bool = False
+
         try:
             # First, we need to load our config.
             # Note that the config MUST BE WRITTEN into this folder, that's where the setup installer is going to look for it.
@@ -261,44 +321,9 @@ class LinuxHost(IStateChangeHandler):
 
             self.Secrets = Secrets(self.Logger, storageDir)
 
-            # ====== SWEETPLACE FACTORY RESET ======
-            try:
-                from .ha.options import Options
-                wipe_flag = Options.GetOption("FACTORY_RESET_CLEAR_DATA", "false")
-                if str(wipe_flag).lower() == "true":
-                    old_id = self.GetPluginId()
-                    self.Logger.info("!!! SWEETPLACE FACTORY RESET REQUESTED !!!")
-                    self.Logger.info(f"Current Plugin ID before wipe: {old_id}")
-                    
-                    import shutil
-                    for filename in os.listdir(storageDir):
-                        if filename != "options.json":
-                            file_path = os.path.join(storageDir, filename)
-                            try:
-                                if os.path.isfile(file_path):
-                                    os.unlink(file_path)
-                                elif os.path.isdir(file_path):
-                                    shutil.rmtree(file_path)
-                            except Exception as e:
-                                self.Logger.error(f"Failed to delete {file_path}. Reason: {e}")
-                    
-                    # Verify destruction by creating a fresh empty Secrets instance
-                    self.Secrets = Secrets(self.Logger, storageDir)
-                    new_id = self.GetPluginId()
-                    self.Logger.info(f"Current Plugin ID after wipe: {new_id} (Should be None)")
-                    self.Logger.info("--------------------------------------------------------------------------")
-                    self.Logger.info("WIPE COMPLETE! The AddOn's cryptographic identity has been permanently erased.")
-                    self.Logger.info("1) Toggle OFF the 'FACTORY RESET' switch in the Home Assistant AddOn configuration.")
-                    self.Logger.info("2) Shut down the Raspberry Pi.")
-                    self.Logger.info("3) Clone your SD Card safely.")
-                    self.Logger.info("The AddOn is now halting purposely to prevent generation of a new ID...")
-                    self.Logger.info("--------------------------------------------------------------------------")
-                    import time
-                    while True:
-                        time.sleep(60)
-            except Exception as e:
-                self.Logger.error(f"Factory Reset Logic Failed: {e}")
-            # ======================================
+            # La cartella dati serve al pannello per l'azzeramento pre-clonazione, che prima era
+            # un interruttore nel tab di configurazione e ora sta nella pagina dell'add-on.
+            self.StorageDir = storageDir
 
             # Prima di usare l'identita', verifica che appartenga a questo apparecchio: se
             # l'immagine e' stata clonata, la cancella qui e la riga sotto ne genera una nuova.
@@ -325,7 +350,8 @@ class LinuxHost(IStateChangeHandler):
             # trascriverlo a mano, che e' il passaggio piu' fragile dell'onboarding.
             onboardApiUrl = os.environ.get("SWEETPLACE_ONBOARD_API", "https://sweetplace-starthere.up.railway.app/device/ping")
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
-            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac)
+            self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac,
+                                       self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.
@@ -388,6 +414,7 @@ class LinuxHost(IStateChangeHandler):
 
             # Setup the HA connection object
             haConnection = Connection(self.Logger, self.HaEventHandler)
+            self.HaConnection = haConnection
             haConnection.Start()
             CommandHandler.Get().RegisterHomeAssistantWebsocketCon(haConnection)
             self.HaEventHandler.RegisterHomeAssistantWebsocketCon(haConnection)
@@ -465,6 +492,12 @@ class LinuxHost(IStateChangeHandler):
                     MAX_RIGENERAZIONI = 3
                     rigenerazioni = 0
                     while True:
+                        # Un apparecchio azzerato per la clonazione non deve registrarsi: non ha
+                        # piu' un'identita' propria, e il percorso di collisione qui sotto ne
+                        # rigenererebbe una scrivendola sul disco che sta per essere duplicato.
+                        if self.WipedForCloning:
+                            self.Logger.info("Sweetplace Onboarding: identita' azzerata per la clonazione, il reporter si ferma.")
+                            return
                         attesaSec = RITENTATIVO_SEC
                         try:
                             macs = LinuxHost.GetHardwareMacs()
@@ -505,6 +538,13 @@ class LinuxHost(IStateChangeHandler):
                                 attesaSec = RIPETIZIONE_SEC
                             elif response.ok:
                                 self.Logger.error(f"Sweetplace Onboarding: {api_url} ha risposto HTTP {response.status_code} ma senza conferma di registrazione. Controllare che SWEETPLACE_ONBOARD_API punti a /device/ping.")
+                            elif response.status_code == 409 and self.WipedForCloning:
+                                # Il controllo in cima al ciclo non basta: questa iterazione era
+                                # gia' in volo quando l'azzeramento e' avvenuto, e il percorso
+                                # qui sotto scriverebbe sul disco un'identita' nuova proprio
+                                # mentre lo si sta preparando per la clonazione.
+                                self.Logger.info("Sweetplace Onboarding: collisione ignorata, l'apparecchio e' stato azzerato per la clonazione.")
+                                return
                             elif response.status_code == 409 and rigenerazioni < MAX_RIGENERAZIONI:
                                 # Il backend ha riconosciuto che questa identita' appartiene gia'
                                 # a un altro apparecchio: l'immagine e' stata clonata e il sigillo
@@ -546,7 +586,6 @@ class LinuxHost(IStateChangeHandler):
                 except Exception as e:
                     self.Logger.error(f"Sweetplace Onboarding Reporter failed: {e}")
 
-            import threading
             threading.Thread(target=_ReportToSweetplaceDB, daemon=True).start()
             # --------------------------------------
 
@@ -654,6 +693,14 @@ class LinuxHost(IStateChangeHandler):
 
 
     def DoFirstTimeSetupIfNeeded(self):
+        # Dopo un azzeramento per la clonazione l'identita' NON va rigenerata: e' l'unico punto
+        # del programma che ne crea una, e questa e' la finestra in cui verrebbe scritta dentro
+        # l'immagine che sta per essere duplicata. L'add-on si sta fermando comunque; se la
+        # richiesta di arresto fallisce, questo guard e' cio' che tiene il disco pulito.
+        if self.WipedForCloning:
+            self.Logger.warning("Generazione dell'identita' rifiutata: l'apparecchio e' stato azzerato per la clonazione.")
+            return
+
         # Try to get the plugin id from the config.
         pluginId = self.GetPluginId()
         if HostCommon.IsPluginIdValid(pluginId) is False:

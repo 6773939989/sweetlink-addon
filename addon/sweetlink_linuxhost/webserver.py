@@ -1,11 +1,12 @@
 import os
+import json
 import time
 import logging
 import threading
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from html import escape
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 from urllib.parse import quote
 
 from sweetlink.commandhandler import CommandHandler
@@ -14,6 +15,8 @@ from sweetlink.sentry import Sentry
 from sweetlink.Proto.AddonTypes import AddonTypes
 
 from .config import Config
+from .haadmin import HaAdmin
+from .imageprep import ImagePrep
 
 
 # Creates a simple web server for users to interact with the plugin from the Home Assistant UI.
@@ -22,11 +25,25 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     # A static instance var for the handler class to access this class.
     Instance:"WebServer" = None # type: ignore[reportClassAttributeMissing]
 
-    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str]) -> None:
+    # Tetto al corpo di una richiesta. Il pannello manda un oggetto JSON con un campo: qualunque
+    # cosa piu' grande di questo non e' il pannello, e il server e' a thread singolo.
+    c_MaxRequestBodyBytes = 64 * 1024
+
+    def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str],
+                 reportProvider:Callable[[], List[Dict[str, str]]], wipeAction:Callable[[], List[Dict[str, str]]],
+                 adminCheck:Callable[[str], Optional[bool]]) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
         self.Config = config
+        # Il referto sulla preparazione dell'immagine e l'azzeramento vero e proprio. Stanno qui
+        # e non nel tab di configurazione perche' chi prepara l'immagine deve vedere cosa c'e'
+        # ancora sul disco nello stesso posto in cui preme il pulsante: un interruttore che
+        # azzera l'identita' senza mostrare lo stato e' un incidente in attesa di accadere.
+        self.ReportProvider = reportProvider
+        self.WipeAction = wipeAction
+        # Chiede a Home Assistant se l'utente che ha originato la richiesta e' amministratore.
+        self.AdminCheck = adminCheck
         # Il claim si chiude sul portale Sweetplace: il pannello ci manda il cliente con il MAC
         # gia' compilato, cosi' l'unica cosa che deve inserire e' la propria email.
         self.OnboardBaseUrl = onboardBaseUrl
@@ -129,19 +146,94 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             return True
 
 
+        def _sendJson(self, code:int, payload:Dict[str, Any]) -> None:
+            body = bytes(json.dumps(payload), "utf-8")
+            self.send_response(code)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+
+        # Legge il corpo della richiesta, con un tetto.
+        #
+        # Va letto SEMPRE, anche quando la risposta e' un 404: con keep-alive un corpo lasciato
+        # nel socket manda fuori sincrono la richiesta successiva e la connessione cade. Il tetto
+        # evita che un Content-Length dichiarato enorme tenga occupato l'unico thread del server.
+        def _readBody(self) -> bytes:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return b""
+            if length <= 0:
+                return b""
+            return self.rfile.read(min(length, WebServer.c_MaxRequestBodyBytes))
+
+
         def do_POST(self):
             # Check if the IP is allowed.
             if not self._isAllowedIp():
+                self._readBody()
                 self.send_response(401)
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
 
-            # Il pannello non espone piu' nessuna azione che scriva sul server: l'unica rotta
-            # POST che esisteva serviva all'interruttore dell'accesso remoto, ora rimosso.
-            # L'accesso remoto resta governato dall'opzione di configurazione, letta all'avvio
-            # in linuxhost.py.
-            self.send_response(404)
-            self.end_headers()
+            raw = self._readBody()
+
+            # L'unica rotta che scrive e' l'azzeramento per la clonazione. Il percorso arriva
+            # gia' privato del prefisso dell'Ingress, ma lo confrontiamo per suffisso: cosi'
+            # regge anche se un giorno il Supervisor cambia come inoltra. La query si scarta,
+            # altrimenti un "?x=1" in coda trasformerebbe la rotta in un 404.
+            route = self.path.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+            if not route.endswith("/factory-reset"):
+                self._sendJson(404, {"error": "rotta sconosciuta"})
+                return
+
+            # SOLO gli amministratori di Home Assistant.
+            #
+            # Il pannello non compare nella barra laterale di un utente normale, ma questa rotta
+            # gli risponderebbe lo stesso: Home Assistant lascia apposta aperte ai non
+            # amministratori sia /ingress/session sia /addons/<slug>/info, che restituisce
+            # l'indirizzo ingress con il suo token, e il Supervisor sulla rotta convalida solo
+            # che la sessione esista. Nascondere il pulsante non chiude la porta.
+            #
+            # Il controllo va PRIMA della parola di conferma: e' un'autorizzazione, non una
+            # validazione, e chi non ha diritto non deve nemmeno sapere se ha indovinato.
+            if not WebServer.Instance.RunDevWebServer:
+                userId = self.headers.get(HaAdmin.c_UserIdHeader, "")
+                esito = WebServer.Instance.AdminCheck(userId)
+                if esito is not True:
+                    WebServer.Instance.Logger.warning(f"Azzeramento rifiutato: l'utente [{userId}] non risulta amministratore (esito {esito}).")
+                    if esito is False:
+                        self._sendJson(403, {"error": "solo un amministratore di Home Assistant puo' azzerare questo hub"})
+                    else:
+                        # Non sapere non e' un si'. Ma va distinto, perche' se e' un guasto della
+                        # connessione verso Home Assistant l'operatore deve poterlo capire.
+                        self._sendJson(403, {"error": "non sono riuscito a verificare con Home Assistant chi sei. Riprova quando l'hub e' collegato."})
+                    return
+
+            # La parola di conferma non e' teatro. Il pulsante e' dentro l'iframe di Home
+            # Assistant, dove basta un clic sbagliato per distruggere l'identita' di un hub
+            # in produzione, e non c'e' modo di annullare.
+            try:
+                body:Any = json.loads(raw.decode("utf-8")) if len(raw) > 0 else {}
+                confirm = cast(Dict[str, Any], body).get("confirm") if isinstance(body, dict) else None
+            except Exception:
+                confirm = None
+            if confirm != ImagePrep.c_ConfirmWord:
+                WebServer.Instance.Logger.warning("Azzeramento rifiutato: parola di conferma mancante o errata.")
+                self._sendJson(400, {"error": "conferma mancante"})
+                return
+
+            WebServer.Instance.Logger.info("Azzeramento per la clonazione richiesto dal pannello.")
+            try:
+                actions = WebServer.Instance.WipeAction()
+            except Exception as e:
+                Sentry.OnException("Azzeramento per la clonazione fallito.", e)
+                self._sendJson(500, {"error": str(e)})
+                return
+            self._sendJson(200, {"actions": actions})
 
 
         def do_GET(self):
@@ -187,6 +279,28 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 statusColor = "#31C591"
                 statusText = "Hub attivo"
                 connectingTimerBool = "false"
+
+            # Referto sulla preparazione dell'immagine. Se la lettura fallisce il pannello deve
+            # restare utilizzabile: la configurazione del cliente non dipende da questa sezione.
+            try:
+                report = WebServer.Instance.ReportProvider()
+            except Exception as e:
+                WebServer.Instance.Logger.warning(f"Referto sulla preparazione non disponibile: {e}")
+                report = [{"level": ImagePrep.c_LevelWarn, "title": "Referto",
+                           "detail": "Non disponibile in questo momento. Guarda i log dell'add-on."}]
+            levelColors = {ImagePrep.c_LevelOk: "#31C591", ImagePrep.c_LevelWarn: "#E9B949", ImagePrep.c_LevelBlock: "#F05252"}
+            prepRows = ""
+            for finding in report:
+                dotColor = levelColors.get(finding.get("level", ""), "#939BA6")
+                prepRows += ('<div class="prepRow"><div class="prepDot" style="background-color:' + dotColor + '"></div>'
+                             '<div><b>' + escape(finding.get("title", "")) + '</b>'
+                             '<div class="subtleText">' + escape(finding.get("detail", "")) + '</div></div></div>')
+            if ImagePrep.HasBlockers(report):
+                prepSummaryText = "Da azzerare prima di clonare"
+                prepSummaryColor = "#F05252"
+            else:
+                prepSummaryText = "Pronta per la clonazione"
+                prepSummaryColor = "#31C591"
             html = """
 <html>
 <head><title>Sweetplace Control</title>
@@ -305,6 +419,39 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         -ms-transform: translateX(21px);
         transform: translateX(21px);
     }
+    .prepRow {
+        display: flex;
+        align-items: flex-start;
+        margin-top: 10px;
+    }
+    .prepDot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        margin-right: 8px;
+        margin-top: 6px;
+        flex-shrink: 0;
+    }
+    .prepInput {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #6F6F6F;
+        background-color: #1C1C1C;
+        color: white;
+        font-family: inherit;
+        letter-spacing: 2px;
+    }
+    /* Dopo le regole generiche del pulsante, altrimenti a parita' di specificita' vincerebbero
+       loro e il pulsante distruttivo resterebbe blu come tutti gli altri. */
+    .redFeatureButton {
+        background-color: #B4232A;
+    }
+    .redFeatureButton:hover {
+        background-color: #F05252;
+    }
 </style>
 </head>
 <body style="background-color: black; color: white; font-family: Roboto,Noto,Noto Sans,sans-serif;">
@@ -353,6 +500,25 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     <div class="featureDetails" style="word-break: break-all;">"""+publicUrlHtml+"""</div>
                 </div>
             </div>
+
+            <div class="featureHolder">
+                <details id="prepDetails">
+                    <summary class="featureHeader" style="cursor:pointer;">Preparazione immagine</summary>
+                    <div style="margin-top:8px; font-weight:bold; color:"""+prepSummaryColor+""";">
+                        """+prepSummaryText+"""
+                    </div>
+                    """+prepRows+"""
+                    <div class="featureDetails" style="margin-top:15px;">
+                        Azzera identita' Sweetlink, vincolo hardware e chiave NetBird, poi ferma
+                        l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
+                    </div>
+                    <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
+                    <div class="featureButton redFeatureButton" id="prepButton">
+                        Azzera e prepara la clonazione
+                    </div>
+                    <div id="prepResult" class="featureDetails" style="margin-top:12px; white-space: pre-wrap; word-break: break-word;"></div>
+                </details>
+            </div>
         </div>
     </div>
 </div>
@@ -367,9 +533,56 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             // un iframe di terze parti i browser bloccano o partizionano.
             onboardingButton.onclick = (event) => { window.open('"""+onboardUrl+"""', '_blank').focus(); };
         }
+
+        const prepDetails = document.getElementById("prepDetails");
+        const prepButton = document.getElementById("prepButton");
+        const prepConfirm = document.getElementById("prepConfirm");
+        const prepResult = document.getElementById("prepResult");
+        if(prepButton && prepConfirm && prepResult)
+        {
+            prepButton.onclick = () => {
+                const parola = prepConfirm.value.trim().toUpperCase();
+                if(parola !== "AZZERA")
+                {
+                    prepResult.textContent = "Scrivi AZZERA nel campo qui sopra per confermare.";
+                    return;
+                }
+                prepButton.textContent = "Azzeramento in corso...";
+                // Il percorso e' relativo alla pagina: sotto l'Ingress la base cambia a ogni
+                // sessione, quindi non si puo' scrivere un percorso assoluto.
+                const base = window.location.pathname.endsWith("/") ? window.location.pathname : window.location.pathname + "/";
+                fetch(base + "factory-reset", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ confirm: parola })
+                })
+                .then((r) => r.json())
+                .then((d) => {
+                    if(d.error)
+                    {
+                        prepResult.textContent = "Errore: " + d.error;
+                        prepButton.textContent = "Azzera e prepara la clonazione";
+                        return;
+                    }
+                    const righe = (d.actions || []).map((a) => a.level.toUpperCase() + "  " + a.title + ": " + a.detail);
+                    const bloccato = (d.actions || []).some((a) => a.level === "block");
+                    prepResult.textContent = righe.join("\\n");
+                    prepButton.textContent = bloccato ? "Con errori: leggi qui sotto, NON clonare" : "Fatto. Ora spegni l'apparecchio.";
+                })
+                .catch((e) => {
+                    // L'add-on si ferma da solo subito dopo l'azzeramento: la richiesta puo'
+                    // morire a meta' proprio perche' e' andata a buon fine.
+                    prepResult.textContent = "Risposta non ricevuta (" + e + "). L'add-on potrebbe essersi gia' fermato: controlla i log prima di clonare.";
+                    prepButton.textContent = "Azzera e prepara la clonazione";
+                });
+            };
+        }
+
         if("""+connectingTimerBool+""")
         {
-            setInterval(()=> {location.reload();}, 1000)
+            // Non ricaricare mentre la sezione di preparazione e' aperta: la ricarica
+            // cancellerebbe la parola di conferma appena scritta e il referto appena letto.
+            setInterval(()=> { if(!prepDetails || !prepDetails.open) { location.reload(); } }, 1000)
         }
     })();
 </script>

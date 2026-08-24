@@ -25,20 +25,26 @@ arch:
   - amd64
 
 # Map the config folder, we so can add the assistant config snips if needed.
+# all_addon_configs serve alla preparazione dell'immagine: prima di clonare il disco va
+# cancellata anche la chiave privata di NetBird, che vive nella cartella di configurazione del
+# SUO add-on. Senza questa mappa non possiamo nemmeno accorgerci che c'e'.
 map:
   - homeassistant_config:rw
+  - all_addon_configs:rw
 
 # We don't use the default port because it conflicts with software like giv_tcp. So we use our own random port.
 ingress_port: 45120
 
 # Add some config options for user to control the addon.
 # These options are defined in the schema section below, and the translations for them are in the en.yaml file, which gives them pretty names.
+# L'azzeramento per la clonazione NON sta piu' qui. Era un interruttore che distruggeva
+# l'identita' dell'hub senza mostrare nulla di cio' che stava per cancellare, e che andava
+# rimesso a mano su "off" dopo l'uso. Ora e' nella pagina dell'add-on, insieme al referto di
+# cosa c'e' ancora sul disco e a una parola di conferma da digitare.
 options:
   log_level: "info"
-  FACTORY_RESET_CLEAR_DATA: false
 schema:
   log_level: list(debug|info|warning|error)?
-  FACTORY_RESET_CLEAR_DATA: bool
 
 # Allows the addon to make home assistant authed API calls to the core.
 homeassistant_api: true
@@ -47,6 +53,18 @@ auth_api: true
 # rigenerata: senza riavvio i componenti gia' avviati continuerebbero a usare i valori vecchi.
 # Non si puo' contare sul watchdog, che e' un'impostazione dell'utente ed e' spenta di default.
 hassio_api: true
+# ATTENZIONE: "manager" non e' un permesso ristretto. Il Supervisor con quel ruolo concede fra
+# l'altro /host/reboot, /host/shutdown, /os/*, /supervisor/options, /backups* (che contengono i
+# dati e i segreti di TUTTI gli add-on) e install/uninstall di qualunque add-on. E' quasi-root
+# sull'host, su un processo che gia' gira come root e con host_network.
+#
+# Lo chiediamo per una cosa sola, e non sostituibile: fermare l'add-on NetBird prima di
+# cancellargli la chiave privata durante la preparazione dell'immagine. Se resta vivo la
+# riscrive subito, e l'immagine clonata se la porta dietro su tutta la flotta.
+#
+# Tutto il resto funziona anche senza: senza il ruolo le chiamate rispondono 403, finiscono nei
+# log, e il referto dichiara di non aver potuto fermare NetBird invece di tacere.
+hassio_role: manager
 
 # Invece di far costruire l'immagine a Home Assistant sull'hub, la scarica gia' pronta da GHCR.
 # Il tag usato e' esattamente il valore di `version:` qui sotto.
@@ -56,4 +74,4 @@ image: ghcr.io/6773939989/sweetlink-addon/{arch}
 # Note when this version number changes, we must make a release to start a docker container build immediately, since HA will start looking for the new version.
 # Basically: Make the final commit -> test and check lint actions (if a docker change, push to docker-test to ensure it builds) -> bump the version number -> create GitHub release.
 # UPDATE THE CHANGE LOG!
-version: 2.7.47
+version: 2.7.48
