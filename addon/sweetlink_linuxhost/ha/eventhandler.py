@@ -441,6 +441,22 @@ class EventHandler:
 
 
     def _QueueSendEvent(self, entityId:str, sendEvent:Dict[str, Any], forceSend:bool = False) -> None:
+        # NON si accoda niente, perche' questa coda ha un solo consumatore e non esiste piu'.
+        #
+        # Questi eventi informavano gli assistenti vocali passando dal servizio di terzi che
+        # gestiva l'accesso remoto. Quella connessione e' stata staccata, quindi la chiave con
+        # cui _ProcessSendEvents autentica l'invio non arriva mai e ogni tentativo fallisce.
+        #
+        # Lasciarli accodare non era innocuo: la coda si riempiva fino al tetto di mille, il
+        # thread di invio ci riprovava ogni dodici secondi, falliva, li rimetteva dentro e
+        # scriveva due avvisi a ogni giro. Per sempre, su un apparecchio che sta in casa di
+        # qualcuno. Un consumatore che non puo' consumare non e' codice morto: e' un ciclo vivo
+        # che consuma memoria, processore e log.
+        #
+        # Quando Alexa e Google torneranno saranno una skill e una Action nostre, e il
+        # destinatario sara' il nostro backend: il rubinetto si riapre esattamente qui.
+        return
+
         # We collapse individual calls in to a single batch call based on a time threshold.
         self.Logger.debug(f"_QueueSendEvent called `{entityId}`")
         with self.Lock:

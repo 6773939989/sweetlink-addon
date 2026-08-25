@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.51
+
+- 🔇 L'hub non accumula piu' eventi che non ha dove mandare: dopo il distacco dal servizio esterno restava un thread che ci riprovava ogni dodici secondi, riempiendo la memoria e i log senza mai riuscirci.
+
 ## 2.7.50
 
 - 🔒 L'hub non parla piu' con nessun servizio di terzi: l'accesso remoto passa solo dal tunnel Sweetplace, e la segnalazione errori e la telemetria verso l'esterno sono spente.
