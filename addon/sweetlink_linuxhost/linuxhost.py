@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import threading
 import traceback
@@ -603,11 +604,24 @@ class LinuxHost(IStateChangeHandler):
             self.WebServer.SetCloudflareManager(self.CloudflareInstance)
             
             
-            pluginConnectUrl = HostCommon.GetPluginConnectionUrl()
-            if devLocalSweetplaceServerAddress is not None:
-                pluginConnectUrl = HostCommon.GetPluginConnectionUrl(fullHostString="ws://"+devLocalSweetplaceServerAddress)
-            oe = Sweetlink(pluginConnectUrl, pluginId, privateKey, self.Logger, self, pluginVersionStr, self.AddonType)
-            oe.RunBlocking()
+            # QUI FINIVA L'AVVIO, E QUI C'ERA LA CONNESSIONE A UN SERVIZIO DI TERZI.
+            #
+            # Il progetto di origine teneva aperta una websocket permanente verso i propri
+            # server, sulla quale viaggiavano messaggi WebStreamMsg: era un reverse proxy, cioe'
+            # il modo in cui le richieste HTTP arrivavano dall'edge di quel servizio fino a Home
+            # Assistant. Esattamente cio' che fa il tunnel Cloudflare avviato qui sopra.
+            #
+            # Tenerle entrambe voleva dire due strade verso lo stesso Home Assistant, di cui una
+            # attraverso l'infrastruttura di qualcun altro, e un log che diceva "connesso a
+            # Sweetplace" mentre parlava con un dominio che non e' nostro.
+            #
+            # Il ciclo qui sotto prende il posto di quella chiamata perche' era LEI a tenere in
+            # vita il processo: era bloccante e non tornava mai. Tutto il lavoro vero gira su
+            # thread propri — il tunnel, il reporter, il worker cloud, il web server — e senza
+            # qualcosa che trattenga il thread principale l'add-on uscirebbe subito dopo l'avvio.
+            self.Logger.info("Avvio completato: l'hub e' raggiungibile solo attraverso il proprio tunnel.")
+            while True:
+                time.sleep(60 * 60)
         except Exception as e:
             Sentry.OnException("!! Exception thrown out of main host run function.", e)
 

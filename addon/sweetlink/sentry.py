@@ -52,6 +52,19 @@ class Sentry:
         if Sentry.IsDevMode:
             return
 
+        # NON si contatta nessun servizio esterno per configurare la segnalazione errori.
+        #
+        # Il progetto di origine chiedeva la configurazione di Sentry ai propri server e da li'
+        # in avanti spediva le eccezioni fuori. Era l'ultima chiamata dell'add-on verso un
+        # dominio che non e' nostro, e usciva a ogni avvio, prima ancora che l'hub fosse
+        # registrato: un apparecchio a casa di un cliente non deve mandare i propri errori a
+        # nessuno che non abbiamo scelto noi.
+        #
+        # Le eccezioni continuano a finire nei log dell'add-on: _handleException scrive comunque
+        # sul logger, e senza SDK inizializzato semplicemente non le spedisce. Il giorno che
+        # servira' una raccolta errori nostra, il posto dove riattaccarla e' questo.
+        return
+
         # Spin off a thread to make the sentry config api request and then init the sdk.
         def setupSentryThread():
             # Give it a few attempts, in case the network isn't ready yet.

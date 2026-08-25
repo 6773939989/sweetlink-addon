@@ -38,6 +38,15 @@ class CloudflareManager:
         # Scritto dal thread del manager e letto dal thread del web server: e' una sola
         # assegnazione di stringa, non serve il lock.
         self.PublicUrl:Optional[str] = None
+
+        # Vero da quando cloudflared ha registrato almeno una connessione, cioe' da quando
+        # l'hub e' davvero raggiungibile da Internet.
+        #
+        # E' il segnale che il pannello usa per dire "hub attivo". Prima lo diceva l'handshake
+        # con il servizio di terzi da cui passava l'accesso remoto: adesso l'accesso remoto e'
+        # questo tunnel, quindi lo stato lo deve dare chi lo gestisce. Scritto dal thread del
+        # manager e letto da quello del web server: e' un booleano, non serve il lock.
+        self.TunnelActive = False
         
         self._shutdown_event = threading.Event()
         
@@ -124,13 +133,17 @@ class CloudflareManager:
                         break
                     
                     if "Registered tunnel connection" in line:
-                        self.Logger.info("[CloudflareManager] TUNNEL CONNECTION SECURED & ACTIVE.")
+                        self.TunnelActive = True
+                        self.Logger.info("[CloudflareManager] Tunnel attivo: l'hub e' raggiungibile da Internet.")
                     elif "ERR" in line:
                         self.Logger.error(f"[cloudflared] {line.strip()}")
                 
                 # Wait for subprocess finish
                 self.Subprocess.wait()
                 self.Subprocess = None
+                # Il processo del tunnel e' uscito: da qui l'hub non e' piu' raggiungibile, e il
+                # pannello deve tornare a dirlo invece di restare fermo sull'ultimo esito buono.
+                self.TunnelActive = False
                 
             except Exception as e:
                 self.Logger.error(f"[CloudflareManager] Subprocess runtime exception: {e}")

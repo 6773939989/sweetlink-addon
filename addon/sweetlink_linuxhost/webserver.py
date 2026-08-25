@@ -55,7 +55,6 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # a conoscere l'indirizzo pubblico dell'hub, che riceve dal backend.
         self.CloudflareManager:Optional[Any] = None
         self.AccountConnected = False
-        self.IsPendingStartup = True
         self.webServerThread:Optional[threading.Thread] = None
 
         # This indicates if we are running in dev mode.
@@ -88,10 +87,23 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         CommandHandler.Get().RegisterAccountLinkStatusUpdateHandler(self)
 
 
+    # Vero finche' l'hub non e' raggiungibile dall'esterno.
+    #
+    # Prima era un campo che veniva spento dall'handshake con il servizio di terzi da cui
+    # passava l'accesso remoto. Adesso l'accesso remoto e' il nostro tunnel, quindi lo stato
+    # lo chiediamo a chi lo gestisce: se il pannello dicesse "attivo" mentre il tunnel e' giu',
+    # direbbe una cosa falsa proprio a chi lo apre per capire perche' non riesce a collegarsi.
+    @property
+    def IsPendingStartup(self) -> bool:
+        manager = self.CloudflareManager
+        if manager is None:
+            return True
+        return getattr(manager, "TunnelActive", False) is not True
+
+
     # Called when we are connected and we know if there's an account setup with this addon
     def OnPrimaryConnectionEstablished(self, hasConnectedAccount:bool) -> None:
         self.AccountConnected = hasConnectedAccount
-        self.IsPendingStartup = False
 
 
     # Interface function

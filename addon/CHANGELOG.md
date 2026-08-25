@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.50
+
+- 🔒 L'hub non parla piu' con nessun servizio di terzi: l'accesso remoto passa solo dal tunnel Sweetplace, e la segnalazione errori e la telemetria verso l'esterno sono spente.
+- 🟢 Il pannello dice «hub attivo» guardando il tunnel vero: prima lo diceva un servizio esterno, e poteva dirlo anche quando l'hub non era raggiungibile.
+
 ## 2.7.49
 
 - 🌐 L'hub parla con il cloud Sweetplace attraverso un indirizzo unico, deciso in un punto solo: prima era scritto a mano in quattro posti e bastava dimenticarne uno perché metà dell'add-on parlasse con un server e metà con un altro.

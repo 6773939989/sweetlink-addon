@@ -59,7 +59,9 @@ class WebRtcManager():
                     self._ProcessConfig(username, password, stunServers, turnServers)
                     return
 
-                # We need to get new info from the server.
+                # Anche questa strada non parte piu': ci si arriva solo con la chiave che
+                # dava l'handshake con il servizio di terzi, e quella connessione non c'e' piu'.
+                # La configurazione WebRTC tornera' dal nostro TURN, non da qui.
                 self.Logger.info("Fetching WebRTC configuration from server.")
                 request = {
                     "PluginId": self.PluginId,

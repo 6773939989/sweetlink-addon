@@ -28,6 +28,10 @@ class Telemetry:
     # Example: Telemetry.Write("Test", 1, { "FieldKey":"FieldValue", "FieldKey2":1.5 }, { "TagKey":"TagValue" })
     @staticmethod
     def Write(measureStr:str, valueInt:Optional[int]=None, fieldsOpt:Optional[Dict[str,Any]]=None, tagsOpt:Optional[Dict[str,str]]=None):
+        # La telemetria non esce piu': andava ai server del progetto di origine, e nessuno di
+        # noi la legge. Il corpo che spediva resta qui sotto, inerte, perche' e' l'impalcatura
+        # gia' pronta se un domani vorremo misurare qualcosa su infrastruttura nostra.
+        return
         thread = threading.Thread(target=Telemetry._WriteSync, args=(measureStr, valueInt, fieldsOpt, tagsOpt, ))
         thread.start()
 

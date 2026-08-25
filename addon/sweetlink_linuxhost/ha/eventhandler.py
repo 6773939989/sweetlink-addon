@@ -486,7 +486,13 @@ class EventHandler:
     # If true is returned, the event was processed. If false, the events will be re-queued.
     def _ProcessSendEvents(self, events:List[Dict[str, Any]]) -> bool:
 
-        # Ensure we have an API key.
+        # Questa strada non parte piu'. La chiave arrivava dall'handshake con il servizio di
+        # terzi da cui passava l'accesso remoto, e quella connessione non esiste piu': senza
+        # chiave si esce qui sopra e la POST piu' in basso non viene mai raggiunta.
+        #
+        # Il codice resta perche' e' il canale con cui Alexa e Google ricevevano i cambi di
+        # stato: quando quelle integrazioni torneranno, saranno una skill e una Action nostre, e
+        # l'indirizzo da mettere qui sara' il nostro backend.
         if self.SweetplaceApiKey is None or len(self.SweetplaceApiKey) == 0:
             self.Logger.warning("We wanted to do a send state change events, but don't have an API key.")
             time.sleep(10.0)
