@@ -133,8 +133,15 @@ class CloudflareManager:
                         break
                     
                     if "Registered tunnel connection" in line:
-                        self.TunnelActive = True
-                        self.Logger.info("[CloudflareManager] Tunnel attivo: l'hub e' raggiungibile da Internet.")
+                        # cloudflared apre quattro connessioni verso Cloudflare per ridondanza e
+                        # ne registra una alla volta: la riga arriva quattro volte di fila.
+                        # Interessa la transizione, non ogni singola connessione — le altre
+                        # finiscono in debug, dove servono a chi sta diagnosticando.
+                        if not self.TunnelActive:
+                            self.TunnelActive = True
+                            self.Logger.info("[CloudflareManager] Tunnel attivo: l'hub e' raggiungibile da Internet.")
+                        else:
+                            self.Logger.debug("[CloudflareManager] Connessione aggiuntiva del tunnel registrata.")
                     elif "ERR" in line:
                         self.Logger.error(f"[cloudflared] {line.strip()}")
                 

@@ -9,7 +9,6 @@ from sweetlink.mdns import MDns
 from sweetlink.sentry import Sentry
 from sweetlink.hostcommon import HostCommon
 from sweetlink.telemetry import Telemetry
-from sweetlink.pingpong import PingPong
 from sweetlink.sweetlinkcore import Sweetlink
 from sweetlink.localip import LocalIpHelper
 from sweetlink.httprequest import HttpRequest
@@ -406,10 +405,22 @@ class LinuxHost(IStateChangeHandler):
             if result.IsSpecialHomeAssistantAddonMode is False:
                 LocalIpHelper.SetConnectionTargetIpOverride(result.HostnameOrIp)
 
-            # Init the ping pong helper.
-            PingPong.Init(self.Logger, storageDir, pluginId)
-            if devLocalSweetplaceServerAddress is not None:
-                PingPong.Get().DisablePrimaryOverride()
+            # QUI SI AVVIAVA LA MISURA DI LATENZA, E NON SI AVVIA PIU'.
+            #
+            # PingPong.Init() faceva partire un thread che, quindici minuti dopo il primo avvio e
+            # poi ogni cinquanta ore, contattava i server del progetto di origine per misurare
+            # quale fosse il piu' vicino (pingpong.py:_DoPing). Non dipendeva da nessun
+            # handshake: partiva da solo, su ogni hub, e usciva in rete verso un dominio che non
+            # e' nostro. E' stata l'ultima cosa che lo faceva ancora.
+            #
+            # Quella misura serviva a una decisione sola: a quale server puntare la connessione
+            # permanente. Senza quella connessione non c'e' piu' niente da decidere, e nessuno
+            # legge quei numeri — l'unico lettore era il codice del server connection, ormai
+            # irraggiungibile.
+            #
+            # Insieme a Init() se ne va anche DisablePrimaryOverride(), che era un interruttore
+            # da sviluppo per la stessa scelta: senza Init(), PingPong.Get() e' None e chiamarlo
+            # sarebbe stato un AttributeError all'avvio.
 
             # Setup the HA state change handler
             self.HaEventHandler = EventHandler(self.Logger, pluginId, devLocalSweetplaceServerAddress)
@@ -537,6 +548,12 @@ class LinuxHost(IStateChangeHandler):
 
                             if registrato:
                                 self.Logger.info(f"Sweetplace Onboarding: hub registrato. Prossimo aggiornamento fra {RIPETIZIONE_SEC // 3600}h.")
+                                # Da qui in poi la riga dell'apparecchio esiste sul backend, e il
+                                # worker cloud puo' autenticarsi. Senza questo segnale partiva in
+                                # parallelo e la sua socket arrivava prima della registrazione:
+                                # credenziali non trovate, errore a ogni avvio, e recupero solo
+                                # al ritentativo dieci secondi dopo.
+                                CloudWorkerInstance.RegistrazioneConfermata.set()
                                 attesaSec = RIPETIZIONE_SEC
                             elif response.ok:
                                 self.Logger.error(f"Sweetplace Onboarding: {api_url} ha risposto HTTP {response.status_code} ma senza conferma di registrazione. Controllare che SWEETPLACE_ONBOARD_API punti a /device/ping.")

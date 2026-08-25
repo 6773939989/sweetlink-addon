@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.52
+
+- 🛰️ Tolta l'ultima cosa che usciva verso i server del progetto di origine: una misura di latenza che partiva da sola quindici minuti dopo il primo avvio e poi ogni due giorni, e i cui risultati non leggeva piu' nessuno.
+- 🧾 Il tunnel annuncia di essere attivo una volta sola invece di quattro: cloudflared apre quattro connessioni per ridondanza, ma quello che conta e' il passaggio di stato.
+- ⏱️ All'avvio spariva un errore che sembrava un guasto e non lo era: il canale di gestione si presentava al cloud prima che la registrazione dell'hub fosse arrivata, e ora la aspetta.
+
 ## 2.7.51
 
 - 🔇 L'hub non accumula piu' eventi che non ha dove mandare: dopo il distacco dal servizio esterno restava un thread che ci riprovava ogni dodici secondi, riempiendo la memoria e i log senza mai riuscirci.

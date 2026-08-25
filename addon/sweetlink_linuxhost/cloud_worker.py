@@ -512,13 +512,29 @@ class CloudWorker:
             self.logger.error(f"[CloudWorker] _on_generate_password error: {e}")
             self.sio.emit('command_generate_password_result', {'reqId': req_id, 'success': False, 'error': str(e)})
 
-    def _run_loop(self):
+    # Alzata dal reporter quando la registrazione dell'hub e' confermata dal backend.
+    #
+    # Serve perche' il worker e il reporter sono thread distinti e partono insieme: la socket
+    # arrivava al backend PRIMA che la riga dell'apparecchio esistesse, il controllo delle
+    # credenziali non la trovava, e ogni avvio produceva un errore che sembrava un guasto e non
+    # lo era. Si risolveva da solo al ritentativo dopo dieci secondi, ma intanto lo scriveva.
+    #
+    # E' un'attesa con scadenza, non un blocco: se la registrazione non arriva entro il tempo
+    # massimo si prova lo stesso, perche' un hub che non riesce a registrarsi deve comunque
+    # tentare di collegarsi invece di restare fermo in silenzio.
+    RegistrazioneConfermata = threading.Event()
+    c_AttesaRegistrazioneSec = 90
+
+    def _run_loop(self):
         # La socket del worker e il reporter devono parlare con lo STESSO backend:
         # quando erano due costanti separate, puntarne una sola a un ambiente di prova
         # lasciava l'hub registrato di qua e connesso di la', senza nessun errore.
         cloud_url = Backend.BaseUrl()
         self.logger.info(f"[CloudWorker] Connecting to {cloud_url}...")
-        
+
+        if not CloudWorker.RegistrazioneConfermata.wait(timeout=CloudWorker.c_AttesaRegistrazioneSec):
+            self.logger.warning(f"[CloudWorker] Registrazione non confermata entro {CloudWorker.c_AttesaRegistrazioneSec}s: mi collego lo stesso.")
+
         while self._running:
             try:
                 if not self.sio.connected:
