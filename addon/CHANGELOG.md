@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.54
+
+- 🔄 Il pannello non resta piu' indietro dopo un aggiornamento: si serviva senza dire al browser di non conservarlo, e una copia vecchia faceva sembrare che l'aggiornamento non fosse arrivato.
+- 🧭 Il pannello mostra quello che serve adesso. Finche' l'hub non e' stato rivendicato, in cima ci sono QR e codice da stampare; dopo, l'indirizzo del proprio impianto. Il resto sta sotto «Dettagli tecnici».
+
 ## 2.7.53
 
 - 🏷️ Il pannello mostra il codice di rivendicazione dell'hub e il suo QR: sono quelli da stampare sull'etichetta dell'apparecchio, ed e' cio' che permette al cliente di rivendicare il proprio impianto da un indirizzo pubblico, senza dover prima entrare in Home Assistant.

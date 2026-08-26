@@ -312,6 +312,19 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # Send the basic HTML
             self.send_response(200)
             self.send_header("Content-type", "text/html")
+            # QUESTA PAGINA NON SI METTE IN CACHE, MAI.
+            #
+            # Non e' un documento: e' lo stato dell'apparecchio in questo istante — se il tunnel
+            # e' su, il codice di rivendicazione, l'indirizzo pubblico, cosa c'e' ancora sul
+            # disco da azzerare. Una copia vecchia non e' una pagina un po' datata, e' una
+            # pagina che dice il falso.
+            #
+            # Senza queste intestazioni il browser era libero di tenersela, e infatti se l'e'
+            # tenuta: dopo un aggiornamento dell'add-on il pannello continuava a mostrare la
+            # versione precedente, facendo sembrare che l'aggiornamento non fosse arrivato.
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.end_headers()
             mac = WebServer.Instance.MacProvider()
             onboardUrl = WebServer.Instance.OnboardBaseUrl + "/"
@@ -394,25 +407,63 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             else:
                 prepSummaryText = "Pronta per la clonazione"
                 prepSummaryColor = "var(--success-color)"
-            # Costruito qui e non dentro il modello: sono tre casi distinti e infilarli in
-            # un'espressione dentro l'HTML renderebbe illeggibili entrambi.
+            # IL PANNELLO CAMBIA CON LA FASE DI VITA DELL'APPARECCHIO.
+            #
+            # Le due persone che aprono questa pagina non cercano la stessa cosa. In fabbrica
+            # serve il codice da stampare sull'etichetta; a casa del cliente serve l'indirizzo a
+            # cui aprire il proprio impianto, e il codice ha gia' esaurito il suo compito.
+            #
+            # Prima erano cinque schede tutte allo stesso peso, quindi entrambi dovevano
+            # cercare. Adesso in cima c'e' solo quello che serve ADESSO, e il resto sta sotto
+            # "Dettagli tecnici", che si apre se lo si cerca. Lo spartiacque e' la
+            # rivendicazione, perche' e' esattamente il momento in cui l'apparecchio smette di
+            # essere merce e diventa l'impianto di qualcuno.
+            dominio = escape(claimUrl.split("/c/")[0].replace("https://", "")) if claimUrl else ""
+
             if codiceTesto is None:
-                codiceHtml = ('<div class="featureDetails">In attesa della prima registrazione '
-                              'sul backend.</div>')
+                # Prima dell'ottenimento del codice non si sa ancora in quale fase siamo.
+                sezionePrincipale = (
+                    '<div class="featureHolder"><div>'
+                    '<div class="featureHeader">Registrazione in corso</div>'
+                    '<div class="featureDetails">L\'hub si sta annunciando al backend. Il codice '
+                    'di rivendicazione compare qui appena la registrazione riesce.</div>'
+                    '</div></div>')
+                datiCodice = ""
+
             elif claimFatto:
-                codiceHtml = ('<div class="fieldValue">' + codiceTesto + '</div>'
-                              '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
-                              'Questo hub e\' gia\' stato rivendicato: il codice non serve piu\'.'
-                              '</div>')
+                # ── L'APPARECCHIO E' DI QUALCUNO ────────────────────────────────────────────
+                sezionePrincipale = (
+                    '<div class="featureHolder"><div>'
+                    '<div class="featureHeader">Il tuo impianto</div>'
+                    '<div class="fieldValue" style="margin-bottom:var(--ha-space-2);">'
+                    + publicUrlHtml + '</div>'
+                    '<div class="featureDetails">Da qui imposti la posizione della casa e '
+                    'gestisci chi puo\' accedere.</div>'
+                    '</div>'
+                    '<div class="featureButton" id="goToOnboarding">Apri la configurazione</div>'
+                    '</div>')
+                # Il codice resta consultabile, ma fra i dati tecnici: serve solo all'assistenza.
+                datiCodice = ('<div class="datiEtichetta">Codice</div>'
+                              '<div class="fieldValue">' + codiceTesto + '</div>')
+
             else:
-                dominio = escape(claimUrl.split("/c/")[0].replace("https://", "")) if claimUrl else ""
+                # ── L'APPARECCHIO E' ANCORA MERCE ───────────────────────────────────────────
                 qrHtml = ('<div class="qrBox">' + qrSvg + '</div>') if qrSvg else ''
-                codiceHtml = (qrHtml
-                              + '<div class="fieldValue">' + codiceTesto + '</div>'
-                              '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
-                              'Stampa QR e codice sull\'etichetta dell\'apparecchio. Il cliente '
-                              'inquadra il QR, oppure digita il codice su <b>' + dominio + '</b>: '
-                              'senza, non puo\' rivendicare l\'hub nessun altro.</div>')
+                sezionePrincipale = (
+                    '<div class="featureHolder"><div>'
+                    '<div class="featureHeader">Da consegnare</div>'
+                    '<div class="featureDetails" style="margin-bottom:var(--ha-space-3);">'
+                    'Stampa QR e codice sull\'etichetta dell\'apparecchio.</div>'
+                    + qrHtml +
+                    '<div class="codiceGrande">' + codiceTesto + '</div>'
+                    '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
+                    'Il cliente inquadra il QR, oppure digita il codice su <b>' + dominio + '</b>. '
+                    'Senza, non puo\' rivendicare l\'hub nessun altro.</div>'
+                    '</div>'
+                    '<div class="featureButton featureButtonQuieto" id="goToOnboarding">'
+                    'Rivendicalo da qui</div>'
+                    '</div>')
+                datiCodice = ""
 
             html = """
 <html>
@@ -683,6 +734,39 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     .qrBox svg {
         display: block;
     }
+    /* I dati tecnici come coppie etichetta/valore invece che come una scheda ciascuno:
+       sono righe di riferimento, non azioni, e una scheda intera per una riga di testo faceva
+       sembrare importante quanto il resto una cosa che si guarda una volta l'anno. */
+    .datiGriglia {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: var(--ha-space-2) var(--ha-space-4);
+        align-items: baseline;
+        margin-top: var(--ha-space-3);
+    }
+    .datiEtichetta {
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+        white-space: nowrap;
+    }
+    /* Il codice si legge a voce e si trascrive su un'etichetta: va letto senza sforzo, e
+       spaziato perche' i caratteri si distinguano uno per uno. */
+    .codiceGrande {
+        font-size: var(--ha-font-size-xl);
+        font-weight: var(--ha-font-weight-medium);
+        letter-spacing: 0.14em;
+        line-height: var(--ha-line-height-condensed);
+    }
+    /* L'azione secondaria: c'e', ma non compete con il QR che le sta sopra. */
+    .featureButtonQuieto {
+        background-color: transparent;
+        color: var(--primary-color);
+        border: 1px solid var(--divider-color);
+    }
+    .featureButtonQuieto:hover {
+        background-color: var(--secondary-background-color);
+        color: var(--primary-color);
+    }
     .prepSummary {
         margin-top: var(--ha-space-2);
         font-size: var(--ha-font-size-s);
@@ -753,38 +837,19 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 <div>"""+statusText+"""</div>
             </div>
 
+            """+sezionePrincipale+"""
+
             <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">Configura il tuo impianto</div>
-                    <div class="featureDetails">
-                        Registra l'hub, imposta la posizione e gestisci gli utenti di casa.
-                        Il tuo dispositivo e' gia' riconosciuto: ti serve solo la tua email.
+                <details>
+                    <summary class="featureHeader">Dettagli tecnici</summary>
+                    <div class="datiGriglia">
+                        <div class="datiEtichetta">Indirizzo hardware</div>
+                        <div class="fieldValue">"""+escape(macText)+"""</div>
+                        <div class="datiEtichetta">Indirizzo pubblico</div>
+                        <div class="fieldValue">"""+publicUrlHtml+"""</div>
+                        """+datiCodice+"""
                     </div>
-                </div>
-                <div class="featureButton" id="goToOnboarding">
-                    Apri la configurazione
-                </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">Identificativo hardware</div>
-                    <div class="fieldValue">"""+escape(macText)+"""</div>
-                </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">Indirizzo pubblico</div>
-                    <div class="fieldValue">"""+publicUrlHtml+"""</div>
-                </div>
-            </div>
-
-            <div class="featureHolder">
-                <div>
-                    <div class="featureHeader">Codice di rivendicazione</div>
-                    """+codiceHtml+"""
-                </div>
+                </details>
             </div>
 
             <div class="featureHolder">
