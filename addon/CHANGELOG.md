@@ -1,6 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.55
+
+- 🏷️ L'add-on si chiama **Sweetlink**, anche nel menu laterale.
+- 🎯 QR e codice stanno al centro della scheda: sono la ragione per cui quella scheda esiste, e allineati a sinistra sembravano due campi qualunque.
+- 🔘 I pulsanti hanno lo stesso stondo delle schede. Due forme diverse sulla stessa superficie si notano prima del contenuto.
+- 📝 I testi non nominano piu' i componenti interni: si parla di «sistema operativo» e di «tunnel protetto», che e' quello che il cliente ha davanti.
+
 ## 2.7.54
 
 - 🔄 Il pannello non resta piu' indietro dopo un aggiornamento: si serviva senza dire al browser di non conservarlo, e una copia vecchia faceva sembrare che l'aggiornamento non fosse arrivato.

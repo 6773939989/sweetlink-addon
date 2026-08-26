@@ -120,7 +120,7 @@ jobs:
             BUILD_FROM=${{ matrix.base }}
             BUILD_ARCH=${{ matrix.arch }}
             BUILD_VERSION=${{ needs.version.outputs.version }}
-            BUILD_NAME=Sweetplace remote cloud
+            BUILD_NAME=Sweetlink
             BUILD_DESCRIPTION=Secure remote access for Home Assistant
             BUILD_REF=${{ github.sha }}
             BUILD_DATE=${{ github.event.repository.updated_at }}

@@ -93,8 +93,8 @@ class ImagePrep:
         haDir = ImagePrep.FindHaConfigDir()
         if haDir is not None and os.path.isfile(os.path.join(haDir, ".storage", "core.uuid")):
             report.append(ImagePrep._Finding(ImagePrep.c_LevelWarn,
-                "Identificativo di Home Assistant",
-                "Presente e verra' clonato: per le statistiche di Home Assistant tutti gli hub risulteranno la stessa istanza. Non influisce su Sweetplace."))
+                "Identificativo del sistema operativo",
+                "Presente e verra' clonato: per le statistiche del sistema operativo tutti gli hub risulteranno la stessa istanza. Non influisce su Sweetplace."))
 
         return report
 
@@ -107,7 +107,7 @@ class ImagePrep:
         # avviso: un avviso non ferma nessuno, e chi clona senza sapere si porta dietro la
         # chiave WireGuard del master su tutta la flotta.
         if Netbird.ConfigsRoot() is None:
-            findings.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "NetBird",
+            findings.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "Tunnel protetto",
                 "Non posso controllare la sua chiave privata: la cartella degli add-on non risulta montata. "
                 "Verifica che il config.yaml dichiari all_addon_configs, oppure controlla a mano prima di clonare."))
             return findings
@@ -115,16 +115,16 @@ class ImagePrep:
         configs = Netbird.FindConfigs()
         if len(configs) == 0:
             findings.append(ImagePrep._Finding(ImagePrep.c_LevelOk,
-                "NetBird", "Nessuna configurazione sul disco: ogni hub si registrera' con una chiave propria."))
+                "Tunnel protetto", "Nessuna configurazione sul disco: ogni hub si registrera' con una chiave propria."))
             return findings
 
         for path in configs:
             if Netbird.ConfigHasKey(path):
                 findings.append(ImagePrep._Finding(ImagePrep.c_LevelBlock,
-                    "NetBird", f"Chiave privata presente in {path}. Clonando adesso, i peer si contenderebbero lo stesso indirizzo."))
+                    "Tunnel protetto", f"Chiave privata presente in {path}. Clonando adesso, i peer si contenderebbero lo stesso indirizzo."))
             else:
                 findings.append(ImagePrep._Finding(ImagePrep.c_LevelOk,
-                    "NetBird", f"Configurazione presente ma senza chiave: {path}."))
+                    "Tunnel protetto", f"Configurazione presente ma senza chiave: {path}."))
 
         # Il nome del peer: non blocca la clonazione, ed e' solo una segnalazione. Vedi la nota
         # in fondo a netbird.py per il motivo per cui non lo impostiamo da soli.
@@ -135,11 +135,11 @@ class ImagePrep:
                 current = Netbird.ReadConfiguredHostname(logger, slug)
                 if current == desired:
                     findings.append(ImagePrep._Finding(ImagePrep.c_LevelOk,
-                        "Nome del peer NetBird", f"{slug} e' configurato come {desired}."))
+                        "Nome nel tunnel protetto", f"{slug} e' configurato come {desired}."))
                 else:
                     findings.append(ImagePrep._Finding(ImagePrep.c_LevelWarn,
-                        "Nome del peer NetBird",
-                        f"{slug} e' configurato come '{current}' invece di {desired}: nella dashboard sara' difficile riconoscerlo. NetBird prende il nome solo alla prima registrazione."))
+                        "Nome nel tunnel protetto",
+                        f"{slug} e' configurato come '{current}' invece di {desired}: nella dashboard sara' difficile riconoscerlo. Il nome viene assegnato solo alla prima registrazione."))
         return findings
 
 
@@ -191,38 +191,38 @@ class ImagePrep:
             # Nessun accesso alla cartella: non abbiamo toccato niente e non sappiamo niente.
             # Dirlo qui e' obbligatorio, perche' l'alternativa e' un elenco di azioni che tace
             # su NetBird e che chi legge interpreta come "pulito".
-            actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "NetBird",
+            actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "Tunnel protetto",
                 "Non ho potuto controllare ne' cancellare la sua chiave privata: la cartella degli add-on non risulta montata. "
-                "Se NetBird e' installato, la sua chiave e' ancora sul disco. NON clonare prima di aver verificato a mano."))
+                "Se il tunnel protetto e' installato, la sua chiave e' ancora sul disco. NON clonare prima di aver verificato a mano."))
         else:
             configs = Netbird.FindConfigs()
             if len(configs) == 0:
-                actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "NetBird",
+                actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "Tunnel protetto",
                     "Nessuna configurazione sul disco, niente da cancellare."))
             else:
                 for path in configs:
                     slug = Netbird.SlugFromConfigPath(path)
                     if SupervisorApi.StopAddon(logger, slug):
-                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "NetBird", f"Add-on {slug} fermato."))
+                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "Tunnel protetto", f"Add-on {slug} fermato."))
                     else:
-                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelWarn, "NetBird",
+                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelWarn, "Tunnel protetto",
                             f"Non sono riuscito a fermare {slug}: potrebbe riscrivere la chiave subito dopo. Fermalo a mano e riazzera."))
 
                 for path in configs:
                     try:
                         os.remove(path)
                     except Exception as e:
-                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "NetBird", f"Cancellazione di {path} fallita: {e}"))
+                        actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "Tunnel protetto", f"Cancellazione di {path} fallita: {e}"))
 
                 # Rilegge dal disco: se NetBird era ancora vivo puo' aver gia' riscritto il
                 # file, e dirlo adesso e' l'unica cosa che impedisce di clonare con la chiave.
                 remaining = [p for p in Netbird.FindConfigs() if Netbird.ConfigHasKey(p)]
                 if len(remaining) == 0:
-                    actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "NetBird",
+                    actions.append(ImagePrep._Finding(ImagePrep.c_LevelOk, "Tunnel protetto",
                         f"{len(configs)} configurazioni rimosse, nessuna chiave privata sul disco."))
                 else:
-                    actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "NetBird",
-                        f"La chiave privata e' ancora in {', '.join(remaining)}. NON clonare: ferma NetBird e riprova."))
+                    actions.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "Tunnel protetto",
+                        f"La chiave privata e' ancora in {', '.join(remaining)}. NON clonare: ferma il tunnel protetto e riprova."))
 
         # 2. L'identita' di Sweetlink e tutto il resto di /data, tranne le opzioni dell'add-on,
         #    che sono di Home Assistant e non nostre.

@@ -271,11 +271,11 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 if esito is not True:
                     WebServer.Instance.Logger.warning(f"Azzeramento rifiutato: l'utente [{userId}] non risulta amministratore (esito {esito}).")
                     if esito is False:
-                        self._sendJson(403, {"error": "solo un amministratore di Home Assistant puo' azzerare questo hub"})
+                        self._sendJson(403, {"error": "solo un amministratore del sistema operativo puo' azzerare questo hub"})
                     else:
                         # Non sapere non e' un si'. Ma va distinto, perche' se e' un guasto della
                         # connessione verso Home Assistant l'operatore deve poterlo capire.
-                        self._sendJson(403, {"error": "non sono riuscito a verificare con Home Assistant chi sei. Riprova quando l'hub e' collegato."})
+                        self._sendJson(403, {"error": "non sono riuscito a verificare con il sistema operativo chi sei. Riprova quando l'hub e' collegato."})
                     return
 
             # La parola di conferma non e' teatro. Il pulsante e' dentro l'iframe di Home
@@ -454,9 +454,9 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     '<div class="featureHeader">Da consegnare</div>'
                     '<div class="featureDetails" style="margin-bottom:var(--ha-space-3);">'
                     'Stampa QR e codice sull\'etichetta dell\'apparecchio.</div>'
-                    + qrHtml +
-                    '<div class="codiceGrande">' + codiceTesto + '</div>'
-                    '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
+                    + '<div class="consegna">' + qrHtml +
+                    '<div class="codiceGrande">' + codiceTesto + '</div></div>'
+                    '<div class="featureDetails" style="margin-top:var(--ha-space-3);">'
                     'Il cliente inquadra il QR, oppure digita il codice su <b>' + dominio + '</b>. '
                     'Senza, non puo\' rivendicare l\'hub nessun altro.</div>'
                     '</div>'
@@ -633,13 +633,17 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         word-break: break-all;
     }
 
-    /* Angoli a pillola come i pulsanti di Home Assistant, e testo in medium senza maiuscole:
+    /* Lo STESSO stondo delle schede, non la pillola.
+       Un pulsante a pillola dentro una scheda a raggio 12 introduce una seconda forma senza
+       che nulla la giustifichi: due raggi diversi sulla stessa superficie si notano prima
+       del contenuto. Meglio una forma sola, ripetuta.
+       Il testo resta in medium e senza maiuscole forzate, come i pulsanti di Home Assistant:
        il maiuscolo forzato e' stato tolto da Lovelace da parecchie versioni. */
     .featureButton {
         margin-top: var(--ha-space-3);
         background-color: var(--primary-color);
         color: var(--text-primary-color);
-        border-radius: var(--ha-border-radius-pill);
+        border-radius: var(--ha-border-radius-lg);
         font-size: var(--ha-font-size-m);
         font-weight: var(--ha-font-weight-medium);
         transition: background-color 0.2s ease-in-out;
@@ -724,10 +728,19 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     }
     /* La cornice del QR e' bianca in entrambi i temi, come il simbolo che contiene: e' cio'
        che verra' stampato, e un QR va letto nero su bianco. */
+    /* Il QR e il codice stanno al CENTRO della scheda: sono una cosa sola — la si inquadra o
+       la si legge — e allineati a sinistra sembravano due campi qualunque in colonna con il
+       testo intorno, invece dell'oggetto per cui quella scheda esiste. */
+    .consegna {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
     .qrBox {
-        display: inline-block;
         background-color: #ffffff;
-        border-radius: var(--ha-border-radius-sm);
+        border-radius: var(--ha-border-radius-lg);
+        padding: var(--ha-space-2);
         line-height: 0;
         margin-bottom: var(--ha-space-3);
     }
@@ -783,7 +796,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         box-sizing: border-box;
         margin-top: var(--ha-space-3);
         padding: var(--ha-space-3);
-        border-radius: var(--ha-border-radius-sm);
+        border-radius: var(--ha-border-radius-lg);
         border: 1px solid var(--divider-color);
         background-color: var(--primary-background-color);
         color: var(--primary-text-color);
@@ -860,7 +873,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     </div>
                     """+prepRows+"""
                     <div class="prepDanger">
-                        Azzera identita' Sweetlink, vincolo hardware e chiave NetBird, poi ferma
+                        Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto, poi ferma
                         l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
                     </div>
                     <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
