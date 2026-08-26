@@ -33,4 +33,9 @@ pyyaml
 configparser
 sentry-sdk>=2.44.0,<3
 python-socketio[client]>=5.11.0,<6
+# segno
+#   Genera il QR dell'etichetta di rivendicazione, disegnato nel pannello al collaudo.
+#   Scelto perche' e' Python puro: nessuna libreria nativa da compilare e nessuna dipendenza da
+#   Pillow, che su un Raspberry allungherebbe il build dell'immagine per disegnare dei quadrati.
+segno>=1.6.1,<2
 #zstandard <version> - Installed dynamically if the platform supports it.

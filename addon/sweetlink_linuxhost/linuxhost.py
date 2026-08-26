@@ -164,10 +164,15 @@ class LinuxHost(IStateChangeHandler):
 
     # Restituisce i MAC delle schede di rete fisiche, in maiuscolo, ordinati e senza duplicati.
     #
-    # Con includeRemovable=False esclude le schede su bus rimovibile: e' la forma da usare per il
-    # vincolo hardware, dove un dongle USB spostato fra apparecchi falserebbe il riconoscimento.
-    # Per la registrazione servono invece tutti gli indirizzi, perche' sono quelli con cui il
-    # cliente identifica il proprio hub.
+    # Con includeRemovable=False esclude le schede su bus rimovibile. E' la forma da usare
+    # SEMPRE — sia per il vincolo hardware sia per la registrazione — e le due cose devono
+    # guardare lo stesso insieme, altrimenti divergono senza che nessuna delle due sia sbagliata.
+    #
+    # L'apparecchio e' un Raspberry Pi e ha due schede saldate, Ethernet e Wi-Fi: quelle sono
+    # tutta l'identita' hardware che esiste, non si spostano e non si tolgono. Non ci sono
+    # dongle da censire, quindi il ripiego a includeRemovable=True qui sopra e' solo il valore
+    # storico della firma e nessun chiamante dovrebbe appoggiarcisi.
+    #
     # Puo' restituire una lista VUOTA: e' un esito legittimo e va gestito da chi chiama.
     #
     # E' l'unica identita' che NON si copia insieme all'immagine della scheda SD, quindi e' cio'
@@ -504,6 +509,19 @@ class LinuxHost(IStateChangeHandler):
                     # meglio fermarsi che generare identita' nuove all'infinito.
                     MAX_RIGENERAZIONI = 3
                     rigenerazioni = 0
+                    # Il plugin_id che avevamo PRIMA di rigenerarlo.
+                    #
+                    # E' la prova che il backend chiede per riassegnarci la riga che gia' ci
+                    # apparteneva: senza, non adotta e ci registra come apparecchio nuovo,
+                    # lasciando orfana la rivendicazione del cliente. Serve perche' il ferro da
+                    # solo non prova niente — il MAC lo conosce chiunque abbia visto la scatola
+                    # o la rete locale, e accettarlo come prova voleva dire lasciare che
+                    # chiunque si facesse assegnare un hub altrui.
+                    #
+                    # Resta in memoria e non sul disco: sul disco verrebbe clonato insieme
+                    # all'immagine, e ogni copia si presenterebbe con la prova di un apparecchio
+                    # che non e' lei.
+                    identitaPrecedente = None
                     while True:
                         # Un apparecchio azzerato per la clonazione non deve registrarsi: non ha
                         # piu' un'identita' propria, e il percorso di collisione qui sotto ne
@@ -513,7 +531,22 @@ class LinuxHost(IStateChangeHandler):
                             return
                         attesaSec = RITENTATIVO_SEC
                         try:
-                            macs = LinuxHost.GetHardwareMacs()
+                            # Solo le schede integrate, cioe' le due del Raspberry Pi: Ethernet e
+                            # Wi-Fi. E' lo STESSO insieme su cui si lega il sigillo hardware
+                            # (SetBoundMacs a riga 580 e il controllo a riga 695), e devono
+                            # coincidere per forza.
+                            #
+                            # Prima qui si mandavano tutte le schede, rimovibili comprese, mentre
+                            # il sigillo ne guardava un sottoinsieme. Da quell'asimmetria nasceva
+                            # un guasto vero: un indirizzo presente nella registrazione ma
+                            # invisibile al sigillo, o comparso su un altro apparecchio, faceva
+                            # divergere i due insiemi senza che nessuno dei due fosse sbagliato.
+                            #
+                            # Le due schede del Raspberry sono saldate: non si spostano, non si
+                            # tolgono, e sono le sole che questo prodotto avra' mai. Censirle
+                            # entrambe e sempre le stesse due e' cio' che permette all'insieme
+                            # registrato di restare stabile per tutta la vita dell'apparecchio.
+                            macs = LinuxHost.GetHardwareMacs(includeRemovable=False)
                             if len(macs) == 0:
                                 # Nessuna scheda con indirizzo permanente. Puo' essere transitorio
                                 # (Wi-Fi non ancora associato, dongle non ancora enumerato), quindi
@@ -532,6 +565,8 @@ class LinuxHost(IStateChangeHandler):
                             currentPluginId = self.GetPluginId()
                             currentPrivateKey = self.GetPrivateKey()
                             payload = {"macs": macs, "plugin_id": currentPluginId, "app_url": app_url, "private_key": currentPrivateKey}
+                            if identitaPrecedente is not None:
+                                payload["previous_plugin_id"] = identitaPrecedente
                             self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
 
                             response = requests.post(api_url, json=payload, timeout=10)
@@ -542,7 +577,20 @@ class LinuxHost(IStateChangeHandler):
                                 # quindi un SWEETPLACE_ONBOARD_API sbagliato darebbe 200 senza
                                 # aver registrato niente. La conferma sta nel corpo.
                                 try:
-                                    registrato = response.json().get("success") is True
+                                    corpo = response.json()
+                                    registrato = corpo.get("success") is True
+                                    # Il codice di rivendicazione torna indietro qui, ed e'
+                                    # l'unico posto da cui lo si puo' leggere: non sta sul
+                                    # disco dell'hub, perche' altrimenti verrebbe clonato
+                                    # insieme all'immagine e tutti gli apparecchi nati da
+                                    # quella copia si rivendicherebbero a vicenda.
+                                    if registrato and WebServer.Instance is not None:
+                                        righe = corpo.get("records") or []
+                                        if len(righe) > 0 and isinstance(righe[0], dict):
+                                            WebServer.Instance.SetClaimInfo(
+                                                righe[0].get("claim_code"),
+                                                righe[0].get("claim_status"),
+                                                righe[0].get("claim_url"))
                                 except Exception:
                                     registrato = False
 
@@ -571,6 +619,9 @@ class LinuxHost(IStateChangeHandler):
                                 # saperlo con certezza, perche' e' l'unico che li vede tutti.
                                 rigenerazioni += 1
                                 self.Logger.error("Sweetplace Onboarding: il backend segnala che questa identita' appartiene gia' a un altro apparecchio. La rigenero e riprovo.")
+                                # Prima di cancellarla: e' l'unica cosa che potra' dimostrare al
+                                # backend che la riga esistente e' nostra.
+                                identitaPrecedente = currentPluginId
                                 self.Secrets.SetPluginId(None)
                                 self.Secrets.SetPrivateKey(None)
                                 self.DoFirstTimeSetupIfNeeded()

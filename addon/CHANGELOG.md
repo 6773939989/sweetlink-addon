@@ -1,6 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.53
+
+- 🏷️ Il pannello mostra il codice di rivendicazione dell'hub e il suo QR: sono quelli da stampare sull'etichetta dell'apparecchio, ed e' cio' che permette al cliente di rivendicare il proprio impianto da un indirizzo pubblico, senza dover prima entrare in Home Assistant.
+- 🔐 Rivendicare un hub non si fa piu' con il solo indirizzo di rete: quello e' scritto sulla scatola e si legge dalla rete locale, quindi chiunque lo conoscesse poteva prendersi l'apparecchio di un altro prima del suo proprietario. Adesso serve il codice stampato.
+- 🔌 L'hub si registra con le sole schede di rete integrate, Ethernet e Wi-Fi. Prima ne dichiarava anche altre, mentre il vincolo hardware guardava solo quelle integrate: i due elenchi potevano divergere senza che nessuno dei due fosse sbagliato.
+- ♻️ Se l'hub rigenera la propria identita' non perde piu' la rivendicazione del cliente: si riprende la riga che gia' gli apparteneva, dimostrando di essere lo stesso apparecchio. Senza quella prova non se la prende nessun altro.
+- 🎨 Il pannello usa i caratteri, i colori e le forme di Home Assistant, e segue il tema chiaro o scuro invece di imporne uno proprio.
+
 ## 2.7.52
 
 - 🛰️ Tolta l'ultima cosa che usciva verso i server del progetto di origine: una misura di latenza che partiva da sola quindici minuti dopo il primo avvio e poi ogni due giorni, e i cui risultati non leggeva piu' nessuno.

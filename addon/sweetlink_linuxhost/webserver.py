@@ -1,3 +1,4 @@
+import io
 import os
 import json
 import time
@@ -54,6 +55,18 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # Impostato dopo l'avvio: il manager del tunnel nasce dopo il web server ed e' l'unico
         # a conoscere l'indirizzo pubblico dell'hub, che riceve dal backend.
         self.CloudflareManager:Optional[Any] = None
+        # Il codice che il cliente usa per rivendicare l'hub, generato dal backend alla prima
+        # registrazione e riportato indietro nella risposta al ping.
+        #
+        # E' qui perche' il pannello e' l'unico posto dove lo si puo' leggere prima che
+        # l'etichetta esista: al collaudo l'operatore lo legge da qui e lo stampa. Il cliente
+        # invece non vedra' mai questa pagina — se ci arrivasse avrebbe gia' accesso all'hub, e
+        # il codice non gli servirebbe.
+        self.ClaimCode:Optional[str] = None
+        self.ClaimStatus:Optional[str] = None
+        # L'indirizzo completo che finisce dentro il QR, composto dal backend e non da noi:
+        # l'add-on conosce il nome tecnico con cui ci parla, non quello su cui va il cliente.
+        self.ClaimUrl:Optional[str] = None
         self.AccountConnected = False
         self.webServerThread:Optional[threading.Thread] = None
 
@@ -79,6 +92,46 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 
     def SetCloudflareManager(self, manager:Any) -> None:
         self.CloudflareManager = manager
+
+
+    # Chiamato dal reporter a ogni registrazione riuscita: il codice non cambia mai, ma lo stato
+    # della rivendicazione si', e il pannello deve dire se l'hub e' ancora da consegnare.
+    def SetClaimInfo(self, claimCode:Optional[str], claimStatus:Optional[str],
+                     claimUrl:Optional[str] = None) -> None:
+        if isinstance(claimCode, str) and len(claimCode) > 0:
+            self.ClaimCode = claimCode
+        if isinstance(claimStatus, str) and len(claimStatus) > 0:
+            self.ClaimStatus = claimStatus
+        if isinstance(claimUrl, str) and claimUrl.startswith("https://"):
+            # Solo https: questo indirizzo finisce dentro un QR che verra' stampato e messo in
+            # mano a un cliente, e un'etichetta sbagliata non si corregge da remoto.
+            self.ClaimUrl = claimUrl
+
+
+    # Il QR dell'etichetta, come SVG da mettere nella pagina.
+    #
+    # Disegnato qui e non da uno strumento a parte perche' al collaudo il pannello e' l'unico
+    # posto in cui l'apparecchio, il suo codice e chi stampa l'etichetta si trovano insieme.
+    #
+    # Sempre nero su bianco, anche quando il pannello e' scuro: un QR chiaro su fondo scuro e'
+    # leggibile da alcuni lettori e non da altri, e l'etichetta va comunque stampata su carta
+    # bianca. Il bordo di quattro moduli e' la zona di quiete prevista dallo standard — senza,
+    # molti lettori non agganciano il simbolo.
+    #
+    # Restituisce None se qualcosa non va: il QR e' un aiuto, e il pannello deve restare
+    # utilizzabile anche senza. Il codice in chiaro sotto resta comunque leggibile.
+    @staticmethod
+    def _QrSvg(url:str) -> Optional[str]:
+        try:
+            import segno
+            simbolo = segno.make(url, error='m')
+            buffer = io.BytesIO()
+            simbolo.save(buffer, kind='svg', scale=4, border=4,
+                         dark='#000000', light='#ffffff',
+                         xmldecl=False, svgns=False, nl=False)
+            return buffer.getvalue().decode('utf-8')
+        except Exception:
+            return None
 
 
     def RegisterForAccountStatusUpdates(self) -> None:
@@ -266,6 +319,28 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 onboardUrl += "?mac=" + quote(mac, safe="")
             macText = mac if len(mac) > 0 else "non rilevato"
 
+            # Il codice di rivendicazione, mostrato raggruppato in due blocchi di quattro:
+            # e' cosi' che va stampato sull'etichetta e cosi' che il portale lo accetta. La
+            # normalizzazione lato backend toglie comunque i trattini, quindi il raggruppamento
+            # e' solo un aiuto per chi legge e trascrive.
+            codice = WebServer.Instance.ClaimCode
+            if isinstance(codice, str) and len(codice) == 8:
+                codiceTesto = escape(codice[:4] + "-" + codice[4:])
+            elif isinstance(codice, str) and len(codice) > 0:
+                codiceTesto = escape(codice)
+            else:
+                codiceTesto = None
+
+            # Se l'hub e' gia' stato rivendicato il codice ha esaurito il suo compito: si dice,
+            # invece di lasciar credere che serva ancora consegnarlo a qualcuno.
+            claimFatto = WebServer.Instance.ClaimStatus == "VERIFIED"
+            claimUrl = WebServer.Instance.ClaimUrl
+            qrSvg = None
+            if isinstance(claimUrl, str) and not claimFatto:
+                # Non si disegna il QR di un hub gia' rivendicato: non serve piu' a nessuno, e
+                # lasciarlo li' fa credere che ci sia ancora una consegna da fare.
+                qrSvg = WebServer._QrSvg(claimUrl)
+
             # L'indirizzo pubblico arriva dal backend insieme al token del tunnel: finche' il
             # tunnel non e' salito non lo conosciamo.
             publicUrl = None
@@ -283,12 +358,16 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # servizio remoto: restano sempre visibili. Lo stato di avvio governa solo la riga di
             # stato e la ricarica automatica, altrimenti un hub che non riesce a collegarsi
             # resterebbe senza l'unica azione che puo' compiere.
+            # I colori sono quelli semantici di Home Assistant, dichiarati nel foglio di stile
+            # piu' sotto. Passare "var(--warning-color)" invece di un esadecimale funziona anche
+            # dentro un attributo style, e fa si' che il pannello segua il tema chiaro o scuro
+            # senza doppioni da tenere allineati a mano.
             if WebServer.Instance.IsPendingStartup:
-                statusColor = "#c0dd72"
+                statusColor = "var(--warning-color)"
                 statusText = "Avvio in corso..."
                 connectingTimerBool = "true"
             else:
-                statusColor = "#31C591"
+                statusColor = "var(--success-color)"
                 statusText = "Hub attivo"
                 connectingTimerBool = "false"
 
@@ -300,67 +379,222 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 WebServer.Instance.Logger.warning(f"Referto sulla preparazione non disponibile: {e}")
                 report = [{"level": ImagePrep.c_LevelWarn, "title": "Referto",
                            "detail": "Non disponibile in questo momento. Guarda i log dell'add-on."}]
-            levelColors = {ImagePrep.c_LevelOk: "#31C591", ImagePrep.c_LevelWarn: "#E9B949", ImagePrep.c_LevelBlock: "#F05252"}
+            levelColors = {ImagePrep.c_LevelOk: "var(--success-color)",
+                           ImagePrep.c_LevelWarn: "var(--warning-color)",
+                           ImagePrep.c_LevelBlock: "var(--error-color)"}
             prepRows = ""
             for finding in report:
-                dotColor = levelColors.get(finding.get("level", ""), "#939BA6")
+                dotColor = levelColors.get(finding.get("level", ""), "var(--secondary-text-color)")
                 prepRows += ('<div class="prepRow"><div class="prepDot" style="background-color:' + dotColor + '"></div>'
                              '<div><b>' + escape(finding.get("title", "")) + '</b>'
                              '<div class="subtleText">' + escape(finding.get("detail", "")) + '</div></div></div>')
             if ImagePrep.HasBlockers(report):
                 prepSummaryText = "Da azzerare prima di clonare"
-                prepSummaryColor = "#F05252"
+                prepSummaryColor = "var(--error-color)"
             else:
                 prepSummaryText = "Pronta per la clonazione"
-                prepSummaryColor = "#31C591"
+                prepSummaryColor = "var(--success-color)"
+            # Costruito qui e non dentro il modello: sono tre casi distinti e infilarli in
+            # un'espressione dentro l'HTML renderebbe illeggibili entrambi.
+            if codiceTesto is None:
+                codiceHtml = ('<div class="featureDetails">In attesa della prima registrazione '
+                              'sul backend.</div>')
+            elif claimFatto:
+                codiceHtml = ('<div class="fieldValue">' + codiceTesto + '</div>'
+                              '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
+                              'Questo hub e\' gia\' stato rivendicato: il codice non serve piu\'.'
+                              '</div>')
+            else:
+                dominio = escape(claimUrl.split("/c/")[0].replace("https://", "")) if claimUrl else ""
+                qrHtml = ('<div class="qrBox">' + qrSvg + '</div>') if qrSvg else ''
+                codiceHtml = (qrHtml
+                              + '<div class="fieldValue">' + codiceTesto + '</div>'
+                              '<div class="featureDetails" style="margin-top:var(--ha-space-2);">'
+                              'Stampa QR e codice sull\'etichetta dell\'apparecchio. Il cliente '
+                              'inquadra il QR, oppure digita il codice su <b>' + dominio + '</b>: '
+                              'senza, non puo\' rivendicare l\'hub nessun altro.</div>')
+
             html = """
 <html>
 <head><title>Sweetplace Control</title>
 <style>
+    /* I VALORI DEL TEMA DI HOME ASSISTANT, RIDICHIARATI QUI.
+
+       Il pannello di un add-on gira dentro un iframe dell'Ingress, e le proprieta' CSS
+       personalizzate del tema NON attraversano il confine di un iframe: un
+       var(--primary-text-color) preso in prestito da Home Assistant sarebbe semplicemente
+       indefinito, e ogni regola che ci si appoggia cadrebbe sul valore di ripiego. L'unico
+       modo di somigliare a Lovelace e' dichiarare gli stessi valori da questa parte.
+
+       Non sono scelti a occhio: vengono dal sorgente del frontend (home-assistant/frontend,
+       branch dev), e se cambiano si aggiornano da li'.
+         src/resources/theme/color/color.globals.ts   colori del tema chiaro e di quello scuro
+         src/resources/theme/color/core.globals.ts    scala dei neutri, raggi, spaziature
+         src/resources/theme/typography.globals.ts    famiglia, scala dei corpi, pesi */
+    :root {
+        color-scheme: dark light;
+
+        --ha-font-family-body: Roboto, Noto, sans-serif;
+        --ha-font-size-s: 12px;
+        --ha-font-size-m: 14px;
+        --ha-font-size-l: 16px;
+        --ha-font-size-xl: 20px;
+        --ha-font-weight-normal: 400;
+        --ha-font-weight-medium: 500;
+        --ha-line-height-condensed: 1.2;
+        --ha-line-height-normal: 1.6;
+
+        --ha-space-1: 4px;
+        --ha-space-2: 8px;
+        --ha-space-3: 12px;
+        --ha-space-4: 16px;
+        --ha-space-5: 20px;
+        --ha-space-6: 24px;
+
+        --ha-border-radius-sm: 4px;
+        --ha-border-radius-lg: 12px;
+        --ha-border-radius-pill: 9999px;
+
+        /* Semantici: gli stessi nei due temi. */
+        --primary-color: #009ac7;
+        --dark-primary-color: #0288d1;
+        --text-primary-color: #ffffff;
+        --error-color: #db4437;
+        --warning-color: #ffa600;
+        --success-color: #43a047;
+
+        /* Scuro come predefinito: e' il tema con cui il pannello e' nato, e mostrarlo chiaro
+           per sbaglio su un impianto scuro si nota molto piu' del contrario. */
+        --primary-background-color: #111111;
+        --card-background-color: #1c1c1c;
+        --secondary-background-color: #282828;
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9b9b9b;
+        --disabled-text-color: #6f6f6f;
+        --divider-color: rgba(225, 225, 225, 0.12);
+    }
+
+    /* L'Ingress non dice quale tema abbia scelto l'utente dentro Home Assistant, quindi si
+       segue la preferenza del sistema: e' l'unico segnale che attraversa l'iframe. */
+    @media (prefers-color-scheme: light) {
+        :root {
+            --primary-background-color: #fafafa;
+            --card-background-color: #ffffff;
+            --secondary-background-color: #e5e5e5;
+            --primary-text-color: #141414;
+            --secondary-text-color: #5e5e5e;
+            --disabled-text-color: #bdbdbd;
+            --divider-color: rgba(0, 0, 0, 0.12);
+        }
+    }
+
+    body {
+        margin: 0;
+        background-color: var(--primary-background-color);
+        color: var(--primary-text-color);
+        font-family: var(--ha-font-family-body);
+        font-size: var(--ha-font-size-m);
+        font-weight: var(--ha-font-weight-normal);
+        line-height: var(--ha-line-height-normal);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    .pageWrap {
+        display: flex;
+        justify-content: center;
+        padding: var(--ha-space-6) var(--ha-space-4);
+    }
+    .panel {
+        width: 100%;
+        max-width: 480px;
+    }
+
+    .brand {
+        text-align: center;
+        font-size: var(--ha-font-size-xl);
+        font-weight: var(--ha-font-weight-medium);
+        line-height: var(--ha-line-height-condensed);
+        margin-bottom: var(--ha-space-4);
+    }
     .whiteLink {
-        color: white;
+        color: var(--primary-text-color);
         text-decoration: none;
     }
     .whiteLink:hover {
         text-decoration: underline;
     }
     .blueLink {
-        color: #0C7BFF;
+        color: var(--primary-color);
         text-decoration: none;
-        font-weight: bold;
+        font-weight: var(--ha-font-weight-medium);
+    }
+    .blueLink:hover {
+        text-decoration: underline;
     }
     .subtleText {
-        color: #939BA6;
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
     }
+
+    .statusRow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--ha-space-2);
+        margin-bottom: var(--ha-space-4);
+        font-size: var(--ha-font-size-s);
+        font-weight: var(--ha-font-weight-medium);
+    }
+    .statusDot {
+        width: 8px;
+        height: 8px;
+        border-radius: var(--ha-border-radius-pill);
+        flex-shrink: 0;
+    }
+
+    /* La scheda di Lovelace: fondo, raggio 12px e un bordo di 1px del colore del divisore.
+       Nessuna ombra, perche' ha-card.ts la lascia a "none" quando il tema non la definisce. */
     .featureHolder {
         display: flex;
         flex-direction: column;
-        background-color: #282828;
-        border-radius: 5px;
-        padding: 15px;
-        margin-bottom: 20px;
+        background-color: var(--card-background-color);
+        border: 1px solid var(--divider-color);
+        border-radius: var(--ha-border-radius-lg);
+        padding: var(--ha-space-4);
+        margin-bottom: var(--ha-space-3);
     }
     .featureHeader {
-        font-size: 18px;
-        font-weight: bold;
-        margin-bottom: 5px;
+        font-size: var(--ha-font-size-l);
+        font-weight: var(--ha-font-weight-medium);
+        line-height: var(--ha-line-height-condensed);
+        margin-bottom: var(--ha-space-1);
     }
     .featureDetails {
-        color: #b5becc;
-        margin-bottom: 5px;
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
     }
+    /* Il valore di un campo, distinto dalla descrizione che gli sta intorno: corpo pieno e
+       colore primario invece del grigio secondario. */
+    .fieldValue {
+        font-size: var(--ha-font-size-m);
+        color: var(--primary-text-color);
+        word-break: break-all;
+    }
+
+    /* Angoli a pillola come i pulsanti di Home Assistant, e testo in medium senza maiuscole:
+       il maiuscolo forzato e' stato tolto da Lovelace da parecchie versioni. */
     .featureButton {
-        font-weight: bold;
-        margin-top:10px;
-        background-color: #3B82F6;
-        color: white;
-        border-radius: 5px;
-        font-weight: bold; /* Needed for iOS, so the button text isn't bold. */
-        transition: 0.5s;
-        padding: 20px;
-        padding-top:13px;
-        padding-bottom:13px;
+        margin-top: var(--ha-space-3);
+        background-color: var(--primary-color);
+        color: var(--text-primary-color);
+        border-radius: var(--ha-border-radius-pill);
+        font-size: var(--ha-font-size-m);
+        font-weight: var(--ha-font-weight-medium);
+        transition: background-color 0.2s ease-in-out;
+        padding: var(--ha-space-3) var(--ha-space-5);
         text-align: center;
+        cursor: pointer;
         /* Disable select for all buttons */
         user-select: none; /* supported by Chrome and Opera */
         -webkit-user-select: none; /* Safari */
@@ -369,14 +603,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         -ms-user-select: none; /* Internet Explorer/Edge */
     }
     .featureButton:hover {
-        background-color: #547DEB;
-        cursor:pointer;
-    }
-    .pinkFeatureButton {
-        background-color: #A855F7;
-    }
-    .featureButton:hover {
-        background-color: #c689ff;
+        background-color: var(--dark-primary-color);
     }
     .switch {
         position: relative;
@@ -384,7 +611,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         width: 50px;
         height: 27px;
         margin-bottom: 0px;
-        margin-left: 10px;
+        margin-left: var(--ha-space-3);
     }
         .switch input {
             opacity: 0;
@@ -398,10 +625,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: #6F6F6F;
+        background-color: var(--disabled-text-color);
         -webkit-transition: .4s;
         transition: .4s;
-        border-radius: 34px;
+        border-radius: var(--ha-border-radius-pill);
     }
         .slider:before {
             position: absolute;
@@ -410,21 +637,21 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             width: 19px;
             left: 5px;
             bottom: 4px;
-            background-color: white;
+            background-color: var(--text-primary-color);
             -webkit-transition: .4s;
             transition: .4s;
             border-radius: 50%;
         }
     /* Can be applied to the "slider" span to show a disable state. */
     .sliderDisabled:before {
-        background-color: #2A2C30;
+        background-color: var(--secondary-background-color);
         cursor:not-allowed;
     }
     input:checked + .slider {
-        background-color: #7299ff;
+        background-color: var(--primary-color);
     }
     input:focus + .slider {
-        box-shadow: 0 0 1px #7299ff;
+        box-shadow: 0 0 1px var(--primary-color);
     }
     input:checked + .slider:before {
         -webkit-transform: translateX(21px);
@@ -434,56 +661,96 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     .prepRow {
         display: flex;
         align-items: flex-start;
-        margin-top: 10px;
+        margin-top: var(--ha-space-3);
     }
     .prepDot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        margin-right: 8px;
+        width: 8px;
+        height: 8px;
+        border-radius: var(--ha-border-radius-pill);
+        margin-right: var(--ha-space-2);
         margin-top: 6px;
         flex-shrink: 0;
+    }
+    /* La cornice del QR e' bianca in entrambi i temi, come il simbolo che contiene: e' cio'
+       che verra' stampato, e un QR va letto nero su bianco. */
+    .qrBox {
+        display: inline-block;
+        background-color: #ffffff;
+        border-radius: var(--ha-border-radius-sm);
+        line-height: 0;
+        margin-bottom: var(--ha-space-3);
+    }
+    .qrBox svg {
+        display: block;
+    }
+    .prepSummary {
+        margin-top: var(--ha-space-2);
+        font-size: var(--ha-font-size-s);
+        font-weight: var(--ha-font-weight-medium);
+    }
+    summary {
+        cursor: pointer;
+    }
+    summary::marker {
+        color: var(--secondary-text-color);
     }
     .prepInput {
         width: 100%;
         box-sizing: border-box;
-        margin-top: 10px;
-        padding: 10px;
-        border-radius: 5px;
-        border: 1px solid #6F6F6F;
-        background-color: #1C1C1C;
-        color: white;
+        margin-top: var(--ha-space-3);
+        padding: var(--ha-space-3);
+        border-radius: var(--ha-border-radius-sm);
+        border: 1px solid var(--divider-color);
+        background-color: var(--primary-background-color);
+        color: var(--primary-text-color);
         font-family: inherit;
+        font-size: var(--ha-font-size-m);
+        /* Spaziato perche' qui si scrive una parola esatta e va riletta carattere per
+           carattere prima di premere: e' l'ultima difesa prima di un'azione che non si annulla. */
         letter-spacing: 2px;
     }
+    /* Il segnaposto no: e' una frase, e spaziata diventa piu' difficile da leggere invece che
+       piu' facile. */
+    .prepInput::placeholder {
+        letter-spacing: normal;
+        color: var(--secondary-text-color);
+    }
+    .prepInput:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
     /* Dopo le regole generiche del pulsante, altrimenti a parita' di specificita' vincerebbero
-       loro e il pulsante distruttivo resterebbe blu come tutti gli altri. */
+       loro e il pulsante distruttivo resterebbe del colore primario come tutti gli altri. */
+    /* La parte distruttiva si stacca dall'elenco dei rilievi con un divisore, come fanno le
+       schede di Lovelace fra intestazione e azioni: leggere lo stato e distruggerlo sono due
+       cose diverse e non devono sembrare la continuazione l'una dell'altra. */
+    .prepDanger {
+        margin-top: var(--ha-space-4);
+        padding-top: var(--ha-space-4);
+        border-top: 1px solid var(--divider-color);
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+    }
     .redFeatureButton {
-        background-color: #B4232A;
+        background-color: var(--error-color);
     }
     .redFeatureButton:hover {
-        background-color: #F05252;
+        background-color: #b23025;
     }
 </style>
 </head>
-<body style="background-color: black; color: white; font-family: Roboto,Noto,Noto Sans,sans-serif;">
-<div style="display: flex; align-content: center; justify-content: center; margin-top: 30px">
-    <div style="background-color:#1C1C1C; border-radius: 5px; padding: 25px; min-width: 300px; max-width:450px">
-        <div style="display: flex; justify-content: center; margin-bottom: 20px;">
-            <div style="display: flex; flex-direction: column; align-items: center;">
-                <div style="display: flex; justify-content: center; font-size: 28px; margin-bottom:10px; margin-top:10px">
-                    <!-- this must target open blank or it won't open properly! -->
-                    <a href="https://sweetplace.me" target="_blank" class="whiteLink">Sweetplace</a>
-                </div>
-            </div>
+<body>
+<div class="pageWrap">
+    <div class="panel">
+        <div class="brand">
+            <!-- this must target open blank or it won't open properly! -->
+            <a href="https://sweetplace.me" target="_blank" class="whiteLink">Sweetplace</a>
         </div>
 
         <div>
-            <div style="display: flex; justify-content: center; align-items: baseline; margin-bottom:20px;">
-                <div style="width:10px; height:10px; background-color:"""+statusColor+"""; border-radius:50%; margin-right:5px;"></div>
-                <div style="margin-bottom:5px; text-align: center; color:"""+statusColor+"""; font-weight: bold;">
-                    """+statusText+"""
-                </div>
+            <div class="statusRow" style="color:"""+statusColor+""";">
+                <div class="statusDot" style="background-color:"""+statusColor+""";"></div>
+                <div>"""+statusText+"""</div>
             </div>
 
             <div class="featureHolder">
@@ -494,7 +761,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                         Il tuo dispositivo e' gia' riconosciuto: ti serve solo la tua email.
                     </div>
                 </div>
-                <div class="pinkFeatureButton featureButton" id="goToOnboarding">
+                <div class="featureButton" id="goToOnboarding">
                     Apri la configurazione
                 </div>
             </div>
@@ -502,25 +769,32 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             <div class="featureHolder">
                 <div>
                     <div class="featureHeader">Identificativo hardware</div>
-                    <div class="featureDetails" style="word-break: break-all;">"""+escape(macText)+"""</div>
+                    <div class="fieldValue">"""+escape(macText)+"""</div>
                 </div>
             </div>
 
             <div class="featureHolder">
                 <div>
                     <div class="featureHeader">Indirizzo pubblico</div>
-                    <div class="featureDetails" style="word-break: break-all;">"""+publicUrlHtml+"""</div>
+                    <div class="fieldValue">"""+publicUrlHtml+"""</div>
+                </div>
+            </div>
+
+            <div class="featureHolder">
+                <div>
+                    <div class="featureHeader">Codice di rivendicazione</div>
+                    """+codiceHtml+"""
                 </div>
             </div>
 
             <div class="featureHolder">
                 <details id="prepDetails">
-                    <summary class="featureHeader" style="cursor:pointer;">Preparazione immagine</summary>
-                    <div style="margin-top:8px; font-weight:bold; color:"""+prepSummaryColor+""";">
+                    <summary class="featureHeader">Preparazione immagine</summary>
+                    <div class="prepSummary" style="color:"""+prepSummaryColor+""";">
                         """+prepSummaryText+"""
                     </div>
                     """+prepRows+"""
-                    <div class="featureDetails" style="margin-top:15px;">
+                    <div class="prepDanger">
                         Azzera identita' Sweetlink, vincolo hardware e chiave NetBird, poi ferma
                         l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
                     </div>
@@ -528,7 +802,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     <div class="featureButton redFeatureButton" id="prepButton">
                         Azzera e prepara la clonazione
                     </div>
-                    <div id="prepResult" class="featureDetails" style="margin-top:12px; white-space: pre-wrap; word-break: break-word;"></div>
+                    <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); white-space: pre-wrap; word-break: break-word;"></div>
                 </details>
             </div>
         </div>
