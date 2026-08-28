@@ -490,7 +490,12 @@ class CloudWorker:
                 # La password iniziale NON viaggia verso il cloud: nessuno la legge, e una
                 # credenziale che attraversa la rete senza che serva a niente e' solo una
                 # credenziale in piu' che puo' finire in un log.
-                'result': {'name': name, 'id': person_id, 'username': auth_username},
+                # id = la PERSONA, auth_id = l'UTENTE. Sono due cose diverse e servono
+                # entrambe: la persona per rinominarla e cancellarla, l'utente per toccarne le
+                # credenziali. Prima usciva solo la persona, e chi doveva impostare la password
+                # si ritrovava un identificativo che l'anagrafica degli utenti non conosce.
+                'result': {'name': name, 'id': person_id, 'auth_id': auth_user_id,
+                           'username': auth_username},
                 'error': None
             })
         except Exception as e:
@@ -627,21 +632,45 @@ class CloudWorker:
             if not getattr(self.ha_connection, 'IsConnected', False):
                 raise Exception("HA WebSocket not connected.")
                 
-            resolved_user_id = auth_id
-            
-            # Robust mapping via config/auth/list (person/list is not a valid HA WS command, it caused silent fallback to person_id!)
+            # L'IDENTIFICATIVO SI CERCA PRIMA PER CORRISPONDENZA ESATTA, POI PER NOME.
+            #
+            # Il ripiego per nome confrontava il nome VISUALIZZATO con il nome di ACCESSO, e
+            # funzionava solo finche' il secondo veniva derivato dal primo. Da quando chi
+            # aggiunge una persona sceglie il nome di accesso che vuole, "Tiberio" con accesso
+            # "oneshot" non corrispondeva piu' a niente: restava l'identificativo della persona,
+            # che l'anagrafica degli utenti non conosce, e la creazione delle credenziali
+            # falliva con "User not found".
+            #
+            # Peggio: quel confronto veniva provato PRIMA di quello esatto, quindi un altro
+            # utente il cui nome visualizzato somigliasse al nome di accesso cercato poteva
+            # essere scelto al posto di quello giusto, e si sarebbe cambiata la password alla
+            # persona sbagliata.
+            resolved_user_id = None
             auth_list_msg = {"type": "config/auth/list"}
             list_response = self.ha_connection.SendAndReceiveMsg(auth_list_msg)
+            utenti = []
             if list_response and list_response.get('success'):
-                users = list_response.get('result', [])
-                for u in users:
-                    u_name = u.get('name', '').lower().replace(' ', '.')
-                    target = username.lower().replace('_', '.') if username else ""
-                    # Match by name slug or direct ID fallback
-                    if (target and u_name == target) or u.get('id') == auth_id:
+                utenti = list_response.get('result', []) or []
+
+            for u in utenti:
+                if auth_id and u.get('id') == auth_id:
+                    resolved_user_id = u.get('id')
+                    self.logger.info(f"[CloudWorker] Utente trovato per identificativo: {resolved_user_id}")
+                    break
+
+            if resolved_user_id is None and username:
+                target = username.lower().replace('_', '.')
+                for u in utenti:
+                    if u.get('name', '').lower().replace(' ', '.') == target:
                         resolved_user_id = u.get('id')
-                        self.logger.info(f"[CloudWorker] Successfully mapped username/auth_id to auth_user_id: {resolved_user_id}")
+                        self.logger.warning(f"[CloudWorker] Utente trovato solo per nome ({target}): {resolved_user_id}")
                         break
+
+            if resolved_user_id is None:
+                # Non si prosegue con l'identificativo ricevuto sperando che vada bene: se non
+                # e' un utente, la creazione fallisce piu' avanti con un messaggio che non dice
+                # perche'. Meglio dirlo qui.
+                raise Exception(f"Nessun utente di Home Assistant corrisponde a {auth_id!r} o al nome di accesso {username!r}.")
 
             # Dal momento che `admin_change_password` fallisce sempre con "Unauthorized" se il token dell'addon
             # non ha privilegi 'Owner' (gli Addon solitamente hanno solo 'Admin'), noi AGGIRIAMO il problema

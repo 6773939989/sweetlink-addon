@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.64
+
+- 🔑 La password non veniva impostata quando il nome di accesso era diverso dal nome visualizzato: «Tiberio» con accesso «oneshot» falliva con «utente non trovato». L'invito conservava l'identificativo della persona invece di quello dell'utente, e il ripiego cercava di rimediare confrontando i due nomi — cosa che funzionava solo finché coincidevano.
+- 🔑 L'utente si cerca prima per corrispondenza esatta e solo dopo per nome. Prima l'ordine era invertito, e una persona con un nome simile poteva vedersi cambiare la password al posto di un'altra.
+
 ## 2.7.63
 
 - 🔓 Se da casa non si riesce più a entrare dopo troppi tentativi sbagliati, il portale se ne accorge da solo e mostra «Sblocca casa mia». Il blocco è sull'indirizzo di rete, non sulla persona: cancellare e ricreare l'utente non serviva a niente.
