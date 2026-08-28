@@ -28,6 +28,24 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 
     # Tetto al corpo di una richiesta. Il pannello manda un oggetto JSON con un campo: qualunque
     # cosa piu' grande di questo non e' il pannello, e il server e' a thread singolo.
+    # I TRE COLORI DELLA GRAVITA', CON IL TESTO CHE CI STA SOPRA.
+    #
+    # Servono etichette con il fondo colorato e non parole colorate, e non e' una scelta di
+    # gusto: questo pannello segue il tema di Home Assistant, quindi lo stesso colore deve
+    # reggere sia su scheda chiara sia su scheda scura. Nessuno ci riesce. Misurato, il giallo
+    # sta a 1.68:1 su bianco (illeggibile) e a 10.14:1 su scuro; il verde fa 5.13 su bianco ma
+    # 3.32 su scuro. Con il fondo colorato il contrasto va verificato solo DENTRO l'etichetta,
+    # dove non dipende dal tema: verde con bianco 5.13, giallo con nero 11.23, arancione con
+    # nero 6.11. Tutti sopra il 4.5 richiesto.
+    #
+    # L'arancione, e non il rosso, per il livello bloccante: e' la richiesta di chi usa questo
+    # pannello, ed e' comunque distinguibile dal giallo (2.5:1 fra i due fondi).
+    c_ColoriEsito = {
+        "ok":    ("#2E7D32", "#FFFFFF", "OK"),
+        "warn":  ("#F2C200", "#111111", "ATTENZIONE"),
+        "block": ("#E8710A", "#111111", "ERRORE"),
+    }
+
     c_MaxRequestBodyBytes = 64 * 1024
 
     def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str],
@@ -392,9 +410,13 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 WebServer.Instance.Logger.warning(f"Referto sulla preparazione non disponibile: {e}")
                 report = [{"level": ImagePrep.c_LevelWarn, "title": "Referto",
                            "detail": "Non disponibile in questo momento. Guarda i log dell'add-on."}]
-            levelColors = {ImagePrep.c_LevelOk: "var(--success-color)",
-                           ImagePrep.c_LevelWarn: "var(--warning-color)",
-                           ImagePrep.c_LevelBlock: "var(--error-color)"}
+            # Gli stessi tre colori del resoconto dopo l'azzeramento (c_ColoriEsito): la
+            # stessa gravita' deve avere lo stesso colore nei due riquadri, che stanno uno
+            # sopra l'altro nella stessa pagina.
+            levelColors = {k: v[0] for k, v in WebServer.c_ColoriEsito.items()}
+            # I colori li serve il server, cosi' esistono in un posto solo: la pagina non li
+            # ridichiara e non possono divergere dai pallini del referto qui sopra.
+            coloriEsitoJs = json.dumps(WebServer.c_ColoriEsito)
             prepRows = ""
             for finding in report:
                 dotColor = levelColors.get(finding.get("level", ""), "var(--secondary-text-color)")
@@ -718,6 +740,22 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         align-items: flex-start;
         margin-top: var(--ha-space-3);
     }
+    /* Le righe del resoconto dopo l'azzeramento. */
+    .esitoRiga {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--ha-space-2);
+        margin-top: var(--ha-space-3);
+    }
+    .esitoEtichetta {
+        flex-shrink: 0;
+        border-radius: var(--ha-border-radius-pill);
+        padding: 0 var(--ha-space-2);
+        font-size: var(--ha-font-size-s);
+        font-weight: 700;
+        line-height: 1.7;
+        letter-spacing: 0.02em;
+    }
     .prepDot {
         width: 8px;
         height: 8px;
@@ -911,6 +949,43 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         const prepButton = document.getElementById("prepButton");
         const prepConfirm = document.getElementById("prepConfirm");
         const prepResult = document.getElementById("prepResult");
+
+        // I COLORI ARRIVANO DAL SERVER, IL TESTO DIVENTA NODI E NON HTML.
+        // Nei dettagli finiscono i nomi degli account letti da Home Assistant, cioe' testo che
+        // decide chi crea quegli account e non noi. Con innerHTML basterebbe un account chiamato
+        // "<img onerror=...>" per far eseguire qualcosa in questa pagina, che gira dentro il
+        // pannello di amministrazione. Con createElement e textContent il problema non esiste:
+        // qualunque cosa ci sia dentro resta testo.
+        const coloriEsito = """+coloriEsitoJs+""";
+        function disegnaEsiti(actions)
+        {
+            prepResult.textContent = "";
+            (actions || []).forEach((a) => {
+                const c = coloriEsito[a.level]
+                       || ["var(--secondary-text-color)", "#FFFFFF", String(a.level || "?").toUpperCase()];
+                const riga = document.createElement("div");
+                riga.className = "esitoRiga";
+
+                const etichetta = document.createElement("span");
+                etichetta.className = "esitoEtichetta";
+                etichetta.style.backgroundColor = c[0];
+                etichetta.style.color = c[1];
+                etichetta.textContent = c[2];
+
+                const corpo = document.createElement("div");
+                const titolo = document.createElement("b");
+                titolo.textContent = a.title;
+                const dettaglio = document.createElement("div");
+                dettaglio.className = "subtleText";
+                dettaglio.textContent = a.detail;
+                corpo.appendChild(titolo);
+                corpo.appendChild(dettaglio);
+
+                riga.appendChild(etichetta);
+                riga.appendChild(corpo);
+                prepResult.appendChild(riga);
+            });
+        }
         if(prepButton && prepConfirm && prepResult)
         {
             // Una volta sola. Dopo l'azzeramento il pulsante si spegne e non si riarma.
@@ -977,9 +1052,8 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                         prepButton.textContent = "Azzera e prepara la clonazione";
                         return;
                     }
-                    const righe = (d.actions || []).map((a) => a.level.toUpperCase() + "  " + a.title + ": " + a.detail);
                     const bloccato = (d.actions || []).some((a) => a.level === "block");
-                    prepResult.textContent = righe.join("\\n");
+                    disegnaEsiti(d.actions);
                     spegniIlPulsante(bloccato ? "Con errori: leggi qui sotto, NON clonare" : "Fatto. Ora spegni l'apparecchio.");
                 })
                 .catch((e) => {

@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.60
+
+- 🎨 Il resoconto dopo l'azzeramento distingue i tre esiti a colpo d'occhio: OK verde, ATTENZIONE giallo, ERRORE arancione. Prima era un blocco di testo tutto uguale, in cui l'unica riga che chiedeva un intervento si leggeva come le altre.
+- 🔒 Quel resoconto viene costruito come nodi e non come HTML: nei dettagli finiscono i nomi degli account letti dal sistema, cioè testo scritto da altri, e un nome costruito ad arte non deve poter eseguire niente dentro il pannello di amministrazione.
+
 ## 2.7.59
 
 - 🔑 L'elenco dei membri mostra il nome di accesso vero. Prima lo fabbricava dall'identificativo della persona sostituendo i trattini bassi con i punti: chi registrava «Mario Rossi» con nome di accesso `marior` se lo vedeva scritto `mario.rossi`, e lo comunicava sbagliato alla persona, che non riusciva a entrare. Ora il nome viene dall'add-on, che lo registra quando crea l'utente; se non lo sa, non scrive niente invece di inventarlo.
