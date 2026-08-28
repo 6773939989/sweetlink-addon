@@ -7,7 +7,6 @@ import requests
 import socketio
 
 from .backend import Backend
-import random
 import urllib3
 
 # Disabilita gli InsecureRequestWarning quando chiamiamo HTTPS interni (se usati)
@@ -313,9 +312,27 @@ class CloudWorker:
             if not user_ready:
                 raise Exception("Home Assistant non ha persistito l'utente di sistema nei tempi previsti (Timeout).")
                 
-            # STEP 1B: Setup Initial Password (PIN) for zero-touch Companion App access
-            import string
-            initial_pin = ''.join(random.choices(string.digits, k=8))
+            # LA PASSWORD INIZIALE: LUNGA, CASUALE PER DAVVERO, E CHE NON ESCE DA QUI.
+            #
+            # Era un PIN di 8 cifre generato con random.choices, cioe' con il Mersenne Twister:
+            # un generatore riproducibile, non crittografico. Dieci milioni di combinazioni su un
+            # account raggiungibile da internet.
+            #
+            # E non e' un valore che vive un istante: resta sull'account finche' la persona non
+            # apre il proprio invito. Se l'invito scade inutilizzato dopo 48 ore quella password
+            # resta li', e non la sostituisce piu' nessuno.
+            #
+            # Qui non serve che sia leggibile o digitabile: nessuno la vede mai. La persona
+            # ricevera' la sua dalla generazione dell'invito, che la sovrascrive. Quindi tanto
+            # vale che sia lunga: 24 byte casuali in esadecimale, 192 bit.
+            #
+            # os.urandom E NON secrets.token_urlsafe, che sarebbe la forma idiomatica: in questo
+            # pacchetto esiste un nostro secrets.py, e "import secrets" prende quello ogni volta
+            # che la cartella del pacchetto finisce prima nel percorso di ricerca. Provato: da
+            # dentro la cartella risolve al nostro, che token_urlsafe non ce l'ha. Oggi l'add-on
+            # parte da /app e andrebbe bene lo stesso, ma il giorno che qualcuno lo lancia
+            # altrimenti si romperebbe proprio qui, sulla generazione di una credenziale.
+            password_iniziale = os.urandom(24).hex()
             # Il nome utente scelto, ripulito: minuscolo, spazi in punti, e solo caratteri che
             # Home Assistant accetta in un nome di accesso. Se non ne arriva uno, si ricade sul
             # nome reale come si e' sempre fatto.
@@ -331,7 +348,7 @@ class CloudWorker:
                 "type": "config/auth_provider/homeassistant/create",
                 "user_id": auth_user_id,
                 "username": auth_username,
-                "password": initial_pin
+                "password": password_iniziale
             }, timeout=3.0)
             
             if not cred_response or not cred_response.get('success'):
@@ -363,7 +380,10 @@ class CloudWorker:
             self.sio.emit('command_create_user_result', {
                 'requestId': request_id, 
                 'success': True,
-                'result': {'name': name, 'id': person_id, 'username': auth_username, 'pin': initial_pin},
+                # La password iniziale NON viaggia verso il cloud: nessuno la legge, e una
+                # credenziale che attraversa la rete senza che serva a niente e' solo una
+                # credenziale in piu' che puo' finire in un log.
+                'result': {'name': name, 'id': person_id, 'username': auth_username},
                 'error': None
             })
         except Exception as e:

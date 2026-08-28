@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.61
+
+- 🔐 La password provvisoria che accompagna un account appena creato passa da 8 cifre a 192 bit di casualità vera. Prima era generata con un generatore riproducibile e non crittografico, e restava sull'account finché la persona non apriva il proprio invito: se l'invito scadeva inutilizzato, restava per sempre.
+- 🔐 Quella password non viaggia più verso il cloud: nessuno la leggeva, e una credenziale che attraversa la rete senza servire a niente è solo una credenziale in più che può finire in un registro.
+
 ## 2.7.60
 
 - 🎨 Il resoconto dopo l'azzeramento distingue i tre esiti a colpo d'occhio: OK verde, ATTENZIONE giallo, ERRORE arancione. Prima era un blocco di testo tutto uguale, in cui l'unica riga che chiedeva un intervento si leggeva come le altre.
