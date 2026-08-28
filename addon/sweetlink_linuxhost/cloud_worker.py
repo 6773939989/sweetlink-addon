@@ -28,6 +28,8 @@ class CloudWorker:
         self.sio.on('command_create_user', self._on_create_user)
         self.sio.on('command_update_user', self._on_update_user)
         self.sio.on('command_delete_user', self._on_delete_user)
+        self.sio.on('command_ban_status', self._on_ban_status)
+        self.sio.on('command_unban', self._on_unban)
         self.sio.on('command_set_location', self._on_set_location)
         self.sio.on('command_generate_password', self._on_generate_password)
 
@@ -183,6 +185,111 @@ class CloudWorker:
                     json.dump(rimasti, f)
         except Exception as e:
             self.logger.error(f"[CloudWorker] Warning: Failed to remove tracked user: {e}")
+
+    # IL BLOCCO PER INDIRIZZO IP DI HOME ASSISTANT.
+    #
+    # Dopo cinque accessi sbagliati HA scrive l'indirizzo in un file nella propria cartella di
+    # configurazione e da li' in poi lo rifiuta PRIMA di guardare chi sia. Cancellare e ricreare
+    # la persona non la fa rientrare, e l'indirizzo bloccato e' quello di casa: restano fuori
+    # tutti quelli che si collegano da li'.
+    #
+    # Il file si CERCA, non si da' per noto. Un nome atteso che non c'e' produrrebbe un
+    # controllo che non trova mai niente e un "nessun blocco" detto a vuoto, che e' la bugia
+    # peggiore in un posto come questo.
+    def _trova_file_blocchi(self):
+        for cartella in ("/homeassistant", "/config", "/homeassistant_config"):
+            if not os.path.isdir(cartella):
+                continue
+            for nome in os.listdir(cartella):
+                if "ip_ban" in nome.lower():
+                    return os.path.join(cartella, nome)
+        return None
+
+    def _leggi_blocchi(self):
+        """Gli indirizzi bloccati, oppure None se non si e' potuto stabilirlo."""
+        percorso = self._trova_file_blocchi()
+        if percorso is None:
+            # Nessun file: finche' non c'e' stato un blocco, HA non lo crea. E' un "nessuno",
+            # non un "non lo so".
+            return []
+        try:
+            import yaml
+            with open(percorso, "r", encoding="utf-8") as f:
+                dati = yaml.safe_load(f)
+            if dati is None:
+                return []
+            if not isinstance(dati, dict):
+                return None
+            return [str(k) for k in dati.keys()]
+        except Exception as e:
+            self.logger.error(f"[CloudWorker] Non riesco a leggere {percorso}: {e}")
+            return None
+
+    def _on_ban_status(self, data):
+        request_id = data.get('requestId')
+        ip = str(data.get('ip') or '').strip()
+        bloccati = self._leggi_blocchi()
+        if bloccati is None:
+            self.sio.emit('command_ban_status_result', {
+                'requestId': request_id, 'bloccato': False,
+                'error': "Non riesco a leggere l'elenco dei blocchi."})
+            return
+        self.logger.info(f"[CloudWorker] Blocchi presenti: {len(bloccati)}. Richiesto per {ip}.")
+        self.sio.emit('command_ban_status_result', {
+            'requestId': request_id, 'bloccato': ip in bloccati, 'error': None})
+
+    def _on_unban(self, data):
+        request_id = data.get('requestId')
+        ip = str(data.get('ip') or '').strip()
+        try:
+            percorso = self._trova_file_blocchi()
+            bloccati = self._leggi_blocchi()
+            if percorso is None or bloccati is None:
+                raise Exception("Non riesco a leggere l'elenco dei blocchi.")
+            if ip not in bloccati:
+                # Non e' un errore: e' la risposta giusta a "sbloccami" da chi non e' bloccato.
+                self.sio.emit('command_unban_result', {
+                    'requestId': request_id, 'success': True, 'riavvio': False, 'error': None})
+                return
+
+            # Si toglie SOLO la voce di questo indirizzo, riga per riga: riscrivere il file con
+            # un serializzatore lo riformatterebbe tutto e butterebbe via quello che non e'
+            # nostro. La voce e' una chiave a inizio riga seguita dalle proprie righe rientrate.
+            with open(percorso, "r", encoding="utf-8") as f:
+                righe = f.readlines()
+            tenute = []
+            dentro = False
+            for riga in righe:
+                if riga.startswith(ip + ":"):
+                    dentro = True
+                    continue
+                if dentro:
+                    if riga.strip() == "" or riga[:1].isspace():
+                        continue
+                    dentro = False
+                tenute.append(riga)
+            with open(percorso, "w", encoding="utf-8") as f:
+                f.writelines(tenute)
+
+            rimasti = self._leggi_blocchi()
+            if rimasti is not None and ip in rimasti:
+                raise Exception("L'indirizzo e' ancora nell'elenco dopo la cancellazione.")
+
+            # IL FILE DA SOLO NON BASTA: Home Assistant tiene l'elenco anche in memoria e lo
+            # rilegge solo all'avvio. Senza riavvio il blocco resterebbe in piedi e il
+            # proprietario vedrebbe "fatto" mentre in casa nessuno rientra.
+            self.logger.info(f"[CloudWorker] Sbloccato {ip}. Riavvio Home Assistant perche' rilegga l'elenco.")
+            self.ha_connection.SendMsg({
+                "type": "call_service", "domain": "homeassistant", "service": "restart"
+            }, waitForResponse=False)
+
+            self.sio.emit('command_unban_result', {
+                'requestId': request_id, 'success': True, 'riavvio': True, 'error': None})
+        except Exception as e:
+            self.logger.error(f"[CloudWorker] Sblocco di {ip} fallito: {e}")
+            self.sio.emit('command_unban_result', {
+                'requestId': request_id, 'success': False, 'riavvio': False, 'error': str(e)})
+
 
     def _on_fetch_users(self, data):
         request_id = data.get('requestId')

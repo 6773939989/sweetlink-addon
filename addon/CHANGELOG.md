@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.63
+
+- 🔓 Se da casa non si riesce più a entrare dopo troppi tentativi sbagliati, il portale se ne accorge da solo e mostra «Sblocca casa mia». Il blocco è sull'indirizzo di rete, non sulla persona: cancellare e ricreare l'utente non serviva a niente.
+- 🔓 Si sblocca soltanto l'indirizzo da cui il proprietario sta chiedendo in quel momento — lo riconosce il server, a lui non viene chiesto niente. Gli altri blocchi restano dove sono.
+
 ## 2.7.62
 
 - 🛡️ Dopo cinque tentativi di accesso sbagliati l'indirizzo da cui arrivano viene bloccato. La pagina di accesso dell'hub è raggiungibile da internet e la robustezza della password non è in nostro potere — chi entra può cambiarsela come vuole — ma i tentativi sì: una password debole resta debole e smette di essere forzabile.
