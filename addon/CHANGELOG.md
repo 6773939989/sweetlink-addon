@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.62
+
+- 🛡️ Dopo cinque tentativi di accesso sbagliati l'indirizzo da cui arrivano viene bloccato. La pagina di accesso dell'hub è raggiungibile da internet e la robustezza della password non è in nostro potere — chi entra può cambiarsela come vuole — ma i tentativi sì: una password debole resta debole e smette di essere forzabile.
+- 🛡️ I due valori si scrivono solo se mancano: se li hai già impostati a mano, restano come li hai messi.
+
 ## 2.7.61
 
 - 🔐 La password provvisoria che accompagna un account appena creato passa da 8 cifre a 192 bit di casualità vera. Prima era generata con un generatore riproducibile e non crittografico, e restava sull'account finché la persona non apriva il proprio invito: se l'invito scadeva inutilizzato, restava per sempre.

@@ -206,9 +206,25 @@ class ConfigManager(IConfigManager):
         # This one is a bit more tricky, since the user might have the http section already and some of the settings already configured.
         # We need to add the http section and set use_x_forwarded_for=true and trusted_proxies to include the HA docker IPs.
         # We also need to make sure the user doesn't already have trusted_proxies set with the wrong IP, or we won't be abel to access the http webserver.
+        #
+        # IL BLOCCO DOPO PIU' TENTATIVI FALLITI, E PERCHE' LO SCRIVIAMO NOI.
+        #
+        # L'hub sta su internet e la sua pagina di accesso e' raggiungibile da chiunque abbia
+        # l'indirizzo. La robustezza della password non e' in nostro potere: chi entra puo'
+        # cambiarsela dal proprio profilo, e Home Assistant non impone una lunghezza minima (la
+        # accetta di 8 caratteri, come dimostra la password provvisoria che gli passiamo alla
+        # creazione di un utente). Quello che possiamo fare e' togliere all'attaccante i
+        # tentativi: cinque errori e quell'indirizzo e' fuori. Una password debole resta debole,
+        # ma smette di essere forzabile.
+        #
+        # I due valori si scrivono SOLO SE MANCANO. Se ci sono gia', si lasciano come sono e si
+        # scrive nel registro quali sono: sovrascrivere a ogni avvio la scelta di chi ha messo
+        # mano al file vuol dire che quella scelta non e' mai davvero sua. E' diverso da
+        # use_x_forwarded_for, che invece imponiamo perche' senza l'add-on non funziona.
         lineEnding = "\r\n"
         dockerIpRangePrefix = "172.30"
         desiredTrustedProxyDockerIp = "172.30.32.0/23"
+        sogliaTentativi = "5"
         lines:List[str] = []
         with open(configFilePath, 'r', encoding="utf-8") as f:
             lines = f.readlines()
@@ -239,6 +255,8 @@ class ConfigManager(IConfigManager):
                 f.writelines(f"    - {desiredTrustedProxyDockerIp}"+lineEnding)
                 f.writelines( "    - 127.0.0.1"+lineEnding)
                 f.writelines( "    - ::1"+lineEnding)
+                f.writelines( "  ip_ban_enabled: true"+lineEnding)
+                f.writelines(f"  login_attempts_threshold: {sogliaTentativi}"+lineEnding)
                 f.writelines(lineEnding)
 
             # Return true since we did work.
@@ -249,11 +267,18 @@ class ConfigManager(IConfigManager):
         self.Logger.debug("ConfigManager._UpdateHttpConfigIfNeeded Found the http section. "+lines[httpSectionLineNumber].lower())
         useXForwardedForLineNumber:Optional[int] = None
         trustedProxiesLineNumber:Optional[int] = None
+        ipBanLineNumber:Optional[int] = None
+        sogliaLineNumber:Optional[int] = None
         lineNumber = httpSectionLineNumber + 1
         singleIndent = None
         while lineNumber < len(lines):
             line = lines[lineNumber]
             lineLower = line.lower()
+            # Una riga vuota in fondo al file non ha nemmeno il primo carattere: senza questo
+            # controllo la ricerca si schianta invece di finire. Prima non capitava perche' si
+            # usciva appena trovate le prime due chiavi; adesso la sezione si legge tutta.
+            if len(lineLower) == 0:
+                break
             # If we see a new section, we are done.
             if lineLower[0].isalnum():
                 break
@@ -267,8 +292,13 @@ class ConfigManager(IConfigManager):
             # Look for trusted_proxies
             if lineLower.find("trusted_proxies") != -1:
                 trustedProxiesLineNumber = lineNumber
-            if useXForwardedForLineNumber is not None and trustedProxiesLineNumber is not None:
-                break
+            # Il blocco dopo piu' tentativi falliti.
+            if lineLower.find("ip_ban_enabled") != -1:
+                ipBanLineNumber = lineNumber
+            if lineLower.find("login_attempts_threshold") != -1:
+                sogliaLineNumber = lineNumber
+            # Non si esce piu' appena trovate le prime due chiavi: le altre due potrebbero stare
+            # sotto, e uscendo prima risulterebbero assenti e verrebbero riscritte a ogni avvio.
             lineNumber += 1
 
         # Default to 2 spaces, the yaml standard, if we couldn't determine it.
@@ -342,6 +372,18 @@ class ConfigManager(IConfigManager):
                 linesToAppendAfterTrustedProxy.append(f"{listIndent}- {desiredTrustedProxyDockerIp}{lineEnding}")
                 # Set the restart now flag since the http calls might be blocked.
                 self.RestartNow = True
+
+        if ipBanLineNumber is None:
+            self.Logger.info("Adding config http section ip_ban_enabled set to true.")
+            linesToAppendAfterHttpHeader.append(f"{singleIndent}ip_ban_enabled: true{lineEnding}")
+        else:
+            self.Logger.info(f"ip_ban_enabled gia' presente, lasciato com'e': {lines[ipBanLineNumber].strip()}")
+
+        if sogliaLineNumber is None:
+            self.Logger.info(f"Adding config http section login_attempts_threshold set to {sogliaTentativi}.")
+            linesToAppendAfterHttpHeader.append(f"{singleIndent}login_attempts_threshold: {sogliaTentativi}{lineEnding}")
+        else:
+            self.Logger.info(f"login_attempts_threshold gia' presente, lasciato com'e': {lines[sogliaLineNumber].strip()}")
 
         # If there are no updates, we are good.
         if hasUpdates is False and len(linesToAppendAfterHttpHeader) == 0 and len(linesToAppendAfterTrustedProxy) == 0:
