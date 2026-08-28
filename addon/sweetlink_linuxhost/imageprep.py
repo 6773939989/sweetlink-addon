@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .secrets import Secrets
 from .netbird import Netbird
@@ -17,11 +17,19 @@ from .supervisorapi import SupervisorApi
 # una sola:
 #
 #   - plugin_id e private_key di Sweetlink, in /data/sweetlink.secrets;
-#   - la chiave privata WireGuard di NetBird, nel suo config.json.
+#   - la chiave privata WireGuard di NetBird, nel suo config.json;
+#   - gli account di Home Assistant, con le loro password e le loro sessioni gia' attive.
 #
 # La seconda non e' un problema nostro ma ce la portiamo in casa lo stesso: e' un difetto noto
 # di NetBird (netbirdio/netbird#1798), e clonare un'immagine con NetBird gia' registrato produce
 # una flotta di peer che condividono la stessa chiave e si contendono lo stesso indirizzo.
+#
+# La terza e' la piu' insidiosa, perche' non e' "nostra" e non sta in nessun file che tocchiamo:
+# vive nello .storage di Home Assistant, che si clona insieme al resto del disco. Un'immagine
+# preparata su un apparecchio gia' configurato consegna a ogni cliente l'account di chi l'ha
+# preparata, e chi ha quell'immagine, o solo quelle credenziali, entra in QUALUNQUE hub costruito
+# a partire da essa. I telefoni gia' accoppiati continuano a funzionare, perche' il loro refresh
+# token e il loro webhook stanno nello stesso .storage.
 #
 # REGOLA DI FONDO: non dichiarare mai pulito cio' che non si e' potuto guardare. Un referto che
 # tace su NetBird perche' la cartella non e' montata e' peggio di nessun referto, perche' chi
@@ -54,10 +62,148 @@ class ImagePrep:
         return {"level": level, "title": title, "detail": detail}
 
 
+    # Gli account di Home Assistant presenti su questo disco.
+    #
+    # Si chiedono a Home Assistant con config/auth/list invece di leggere .storage/auth, per due
+    # ragioni. La prima e' che il formato di quel file e' un dettaglio interno di Home Assistant:
+    # un controllo che lo interpreta a naso smette di funzionare a un aggiornamento senza dare
+    # errore, e un controllo che fallisce in silenzio produce un referto che dice "pulito".
+    # La seconda e' che quella chiamata e' gia' quella che usiamo altrove (haadmin.py:67,
+    # cloud_worker.py:280), quindi non aggiunge una dipendenza nuova su cui sbagliare.
+    #
+    # IL LIVELLO DELL'ESITO NEGATIVO LO DECIDE CHI CHIAMA, E NON E' UN CAPRICCIO.
+    # Nel referto e' bloccante: c'e' qualcosa su questo disco che non deve essere clonato, e il
+    # riepilogo deve dirlo in rosso.
+    # Nell'azzeramento e' un avviso, perche' li' un livello bloccante tiene acceso l'add-on
+    # (linuxhost.py:145) in attesa che l'operatore "risolva e riazzeri", e questa cosa, in quel
+    # momento, non e' risolvibile: l'operatore sta guardando il pannello attraverso ingress, cioe'
+    # autenticato con uno degli account che il referto gli chiede di togliere. Un blocco che non
+    # si puo' sbloccare non e' una protezione, e' una procedura che non finisce.
+    @staticmethod
+    def _HaAccountFindings(logger:logging.Logger, haConnection:Any, livelloGrave:str) -> List[Dict[str, str]]:
+        titolo = "Account del sistema operativo"
+
+        if haConnection is None:
+            return [ImagePrep._Finding(livelloGrave, titolo,
+                "Non ho potuto controllarli: manca la connessione a Home Assistant. Se su questo apparecchio "
+                "esiste anche un solo account, clonare adesso lo consegna a tutta la flotta. Riavvia l'add-on e "
+                "rileggi il referto: non clonare prima di aver visto questa riga verde.")]
+
+        try:
+            # Timeout corto: il referto si ricostruisce a ogni disegno del pannello, e un Home
+            # Assistant lento non deve tenere appesa la pagina che serve a capire cosa succede.
+            response = haConnection.SendMsg({"type": "config/auth/list"}, waitForResponse=True, timeout=5.0)
+        except Exception as e:
+            logger.warning(f"Referto: config/auth/list e' fallita: {e}")
+            response = None
+
+        if not isinstance(response, dict) or cast(Dict[str, Any], response).get("success") is not True:
+            return [ImagePrep._Finding(livelloGrave, titolo,
+                "Home Assistant non ha risposto all'elenco degli account, quindi non so quanti ce ne siano. "
+                "Guardali a mano prima di clonare: un'immagine pronta non ne ha nessuno.")]
+
+        risultato = cast(Dict[str, Any], response).get("result")
+        if not isinstance(risultato, list):
+            return [ImagePrep._Finding(livelloGrave, titolo,
+                "Home Assistant ha risposto in un formato che non riconosco: non so quanti account ci siano. "
+                "Guardali a mano prima di clonare: un'immagine pronta non ne ha nessuno.")]
+
+        voci = cast(List[Any], risultato)
+
+        # system_generated distingue gli account di servizio (Supervisor, add-on) da quelli delle
+        # persone. Se il campo non c'e' NON si tira a indovinare: si dichiara di non aver potuto
+        # distinguere. E' la regola di fondo di questo modulo applicata al caso in cui e' Home
+        # Assistant a cambiare sotto di noi.
+        campoAssente = False
+        diServizio = 0
+        persone:List[str] = []
+        for voce in voci:
+            if not isinstance(voce, dict):
+                continue
+            utente = cast(Dict[str, Any], voce)
+            generato = utente.get("system_generated")
+            if generato is None:
+                campoAssente = True
+            if generato is True:
+                diServizio += 1
+                continue
+            nome = utente.get("name")
+            persone.append(str(nome) if nome else "senza nome")
+
+        if campoAssente:
+            return [ImagePrep._Finding(livelloGrave, titolo,
+                f"Home Assistant non dice quali dei {len(voci)} account sono di servizio, quindi non posso "
+                "distinguerli da quelli delle persone. Guardali a mano prima di clonare.")]
+
+        if len(persone) == 0:
+            return [ImagePrep._Finding(ImagePrep.c_LevelOk, titolo,
+                f"Nessun account di persona: solo {diServizio} di servizio, che ogni hub rigenera per conto suo.")]
+
+        elenco = ", ".join(persone[:4]) + (" e altri" if len(persone) > 4 else "")
+        return [ImagePrep._Finding(livelloGrave, titolo,
+            f"Ce ne sono {len(persone)} ({elenco}), e non li cancello io. Vengono clonati con il disco: ogni hub "
+            "nascerebbe con queste persone, le loro password e i telefoni gia' accoppiati, e chi ha l'immagine "
+            "entrerebbe in tutti gli hub costruiti da essa. Un'immagine pronta non ha account di persone: al "
+            "primo avvio il sistema operativo deve mostrare la propria configurazione iniziale. Non e' una cosa "
+            "che questo add-on possa fare da se', perche' tu stai usando uno di quegli account proprio adesso "
+            "per leggere questa pagina.")]
+
+
+    # Cosa altro, nella cartella di Home Assistant, finisce dentro l'immagine.
+    #
+    # Qui si guarda il disco e si riferisce quello che c'e', invece di cercare un elenco di nomi
+    # attesi: un nome sbagliato, o cambiato da Home Assistant, darebbe un controllo che non trova
+    # niente e un referto che dice "pulito". Meglio "ho trovato questo" che "non ho trovato
+    # quello che mi aspettavo".
+    @staticmethod
+    def _HaDiskFindings(haDir:str) -> List[Dict[str, str]]:
+        findings:List[Dict[str, str]] = []
+        try:
+            nomi = os.listdir(haDir)
+        except Exception as e:
+            return [ImagePrep._Finding(ImagePrep.c_LevelBlock, "Cartella del sistema operativo",
+                f"Non riesco a leggerla ({e}), quindi non so cosa contenga. Guardala a mano prima di clonare.")]
+
+        cronologia = [n for n in nomi if ".db" in n.lower()]
+        if len(cronologia) > 0:
+            findings.append(ImagePrep._Finding(ImagePrep.c_LevelWarn, "Cronologia",
+                f"{len(cronologia)} file di database sul disco ({cronologia[0]} e simili): ogni hub partirebbe "
+                "con la cronologia dell'apparecchio usato per preparare l'immagine."))
+
+        # Si guarda il CONTENUTO e non l'esistenza, per lo stesso motivo di
+        # _SecretsFileHasIdentity: Home Assistant crea un secrets.yaml di soli commenti, e
+        # bloccare su un file vuoto vorrebbe dire mostrare una riga rossa che non si puo'
+        # togliere. Una riga rossa permanente e' una riga che si smette di leggere.
+        segreti = [n for n in nomi if "secret" in n.lower()]
+        pieni:List[str] = []
+        illeggibili:List[str] = []
+        for n in segreti:
+            percorso = os.path.join(haDir, n)
+            if not os.path.isfile(percorso):
+                continue
+            try:
+                with open(percorso, "r", encoding="utf-8", errors="replace") as f:
+                    if any(r.strip() and not r.lstrip().startswith("#") for r in f):
+                        pieni.append(n)
+            except Exception:
+                illeggibili.append(n)
+
+        if len(pieni) > 0:
+            findings.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "File di segreti",
+                f"Contengono qualcosa e vengono clonati cosi' come sono: {', '.join(pieni)}. Svuotali o "
+                "cancellali se dentro c'e' una chiave ancora valida."))
+        if len(illeggibili) > 0:
+            findings.append(ImagePrep._Finding(ImagePrep.c_LevelBlock, "File di segreti",
+                f"Non riesco a leggerli, quindi non so cosa contengano: {', '.join(illeggibili)}. "
+                "Guardali a mano prima di clonare."))
+
+        return findings
+
+
     # Il referto: cosa c'e' ancora sul disco che non deve finire dentro l'immagine clonata.
     # Non modifica niente, si puo' chiamare a ogni disegno del pannello.
     @staticmethod
-    def BuildReport(logger:logging.Logger, secrets:Secrets, hardwareMacs:List[str]) -> List[Dict[str, str]]:
+    def BuildReport(logger:logging.Logger, secrets:Secrets, hardwareMacs:List[str], haConnection:Any = None) -> List[Dict[str, str]]:
         report:List[Dict[str, str]] = []
 
         # 1. L'identita' di Sweetlink.
@@ -95,6 +241,12 @@ class ImagePrep:
             report.append(ImagePrep._Finding(ImagePrep.c_LevelWarn,
                 "Identificativo del sistema operativo",
                 "Presente e verra' clonato: per le statistiche del sistema operativo tutti gli hub risulteranno la stessa istanza. Non influisce su Sweetplace."))
+
+        # 5. Gli account del sistema operativo, che sono la cosa piu' grave che si possa clonare,
+        #    e il resto della sua cartella.
+        report.extend(ImagePrep._HaAccountFindings(logger, haConnection, ImagePrep.c_LevelBlock))
+        if haDir is not None:
+            report.extend(ImagePrep._HaDiskFindings(haDir))
 
         return report
 
@@ -183,7 +335,7 @@ class ImagePrep:
     # cio' che stiamo togliendo. Se non riusciamo a fermarlo lo diciamo, invece di far credere
     # che sia andata bene.
     @staticmethod
-    def Wipe(logger:logging.Logger, secrets:Secrets, storageDir:str) -> List[Dict[str, str]]:
+    def Wipe(logger:logging.Logger, secrets:Secrets, storageDir:str, haConnection:Any = None) -> List[Dict[str, str]]:
         actions:List[Dict[str, str]] = []
 
         # 1. NetBird: prima fermarlo, poi cancellare, poi rileggere.
@@ -272,6 +424,29 @@ class ImagePrep:
         if len(leftovers) > 0:
             actions.append(ImagePrep._Finding(ImagePrep.c_LevelWarn,
                 "Verifica", f"Nella cartella dati sono ricomparsi: {', '.join(leftovers)}. Non sono identita', ma verranno clonati."))
+
+        # 5. GLI ACCOUNT DI HOME ASSISTANT: SI CONTROLLANO, NON SI CANCELLANO.
+        #
+        # Perche' questo azzeramento NON li cancella, pur essendo la cosa piu' pericolosa che
+        # resta sul disco:
+        #  - li cancellerebbe mentre l'operatore sta usando proprio uno di quegli account per
+        #    guardare questa pagina, attraverso ingress. Si ritroverebbe buttato fuori a meta'
+        #    procedura, senza il referto che gli dice se e' andata bene: e il referto e' l'unico
+        #    strumento che ha per capirlo;
+        #  - Home Assistant tiene lo .storage anche in memoria e lo riscrive per conto suo,
+        #    quindi una cancellazione fatta da fuori mentre gira non e' affidabile. Lo stesso
+        #    motivo per cui NetBird va fermato prima di toccargli la chiave;
+        #  - un hub senza nessun account non e' rotto: al primo avvio Home Assistant mostra la
+        #    sua procedura iniziale. Ma e' una decisione che deve prendere chi prepara
+        #    l'immagine, guardando l'elenco, non un effetto collaterale di un pulsante.
+        #
+        # Qui il livello e' AVVISO e non blocco, al contrario del referto. Un blocco fra le azioni
+        # tiene acceso l'add-on (linuxhost.py:145) con l'istruzione "risolvi, riazzera, e spegni
+        # solo quando e' tutto verde": un'istruzione che in questo caso non si puo' eseguire,
+        # perche' l'operatore e' collegato con uno degli account che dovrebbe togliere. Verde non
+        # arriverebbe mai, e la procedura non finirebbe.
+        # Nel referto, che non comanda niente e si limita a descrivere il disco, resta bloccante.
+        actions.extend(ImagePrep._HaAccountFindings(logger, haConnection, ImagePrep.c_LevelWarn))
 
         for a in actions:
             logger.info(f"[Preparazione immagine] {a['level'].upper()} {a['title']}: {a['detail']}")

@@ -537,7 +537,7 @@ class CloudWorker:
     RegistrazioneConfermata = threading.Event()
     c_AttesaRegistrazioneSec = 90
 
-    def _run_loop(self):
+    def _run_loop(self):
         # La socket del worker e il reporter devono parlare con lo STESSO backend:
         # quando erano due costanti separate, puntarne una sola a un ambiente di prova
         # lasciava l'hub registrato di qua e connesso di la', senza nessun errore.

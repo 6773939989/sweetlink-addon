@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.58
+
+- 🧬 Il referto prima della clonazione conta gli account del sistema operativo e si blocca se ne trova. Vivono sul disco insieme a tutto il resto: un'immagine preparata su un apparecchio già configurato consegnerebbe a ogni cliente l'account di chi l'ha preparata, con la sua password e i telefoni già accoppiati.
+- 🧬 Il referto segnala anche i file di database e quelli di segreti trovati nella cartella del sistema operativo, elencando quello che c'è invece di cercare nomi attesi.
+- 🧬 Quando non riesce a controllare gli account, il referto lo dichiara invece di tacere: un controllo silenzioso si legge come «a posto».
+
 ## 2.7.57
 
 - 👤 Chi aggiunge una persona può scegliere il suo nome utente, invece di lasciarlo derivare dal nome reale. È il nome con cui quella persona entrerà nel sistema, e chi lo assegna deve poi comunicarglielo: sceglierlo è meglio che indovinarlo.

@@ -113,7 +113,7 @@ class LinuxHost(IStateChangeHandler):
     # Il referto che il pannello mostra prima di clonare: cosa c'e' ancora sul disco che non
     # deve finire dentro l'immagine. Non modifica niente.
     def BuildImagePrepReport(self) -> List[Dict[str, str]]:
-        return ImagePrep.BuildReport(self.Logger, self.Secrets, LinuxHost.GetHardwareMacs())
+        return ImagePrep.BuildReport(self.Logger, self.Secrets, LinuxHost.GetHardwareMacs(), self.HaConnection)
 
 
     # Azzera l'identita' di questo apparecchio e ferma l'add-on.
@@ -136,7 +136,7 @@ class LinuxHost(IStateChangeHandler):
         # Alzata PRIMA di cancellare, non dopo: fra la cancellazione e l'arresto il reporter e'
         # ancora vivo, e sul suo percorso di collisione rigenererebbe l'identita' appena tolta.
         self.WipedForCloning = True
-        actions = ImagePrep.Wipe(self.Logger, self.Secrets, self.StorageDir)
+        actions = ImagePrep.Wipe(self.Logger, self.Secrets, self.StorageDir, self.HaConnection)
 
         # Ci si ferma SOLO se e' andato tutto bene. Se qualcosa e' rimasto sul disco, l'unico
         # strumento che l'operatore ha per capire cosa e' questo pannello, e spegnersi glielo
