@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import re
 import threading
 import requests
 import socketio
@@ -233,6 +234,12 @@ class CloudWorker:
         request_id = data.get('requestId')
         user_data = data.get('user_data', {})
         name = user_data.get('name', 'Nuovo Utente')
+        # Il nome utente arriva dal portale, dove lo sceglie chi aggiunge la persona.
+        #
+        # Va letto ADESSO e non piu' avanti: qualche riga sotto user_data viene riassegnato con
+        # la risposta di Home Assistant alla creazione dell'utenza, e da quel punto in poi
+        # contiene tutt'altro. Leggerlo li' darebbe silenziosamente il valore sbagliato.
+        nomeUtenteRichiesto = str(user_data.get('username') or '').strip()
         self.logger.info(f"[CloudWorker] Requested User Creation by Cloud: {name}")
 
         try:
@@ -284,7 +291,12 @@ class CloudWorker:
             # STEP 1B: Setup Initial Password (PIN) for zero-touch Companion App access
             import string
             initial_pin = ''.join(random.choices(string.digits, k=8))
-            auth_username = name.lower().replace(" ", ".")
+            # Il nome utente scelto, ripulito: minuscolo, spazi in punti, e solo caratteri che
+            # Home Assistant accetta in un nome di accesso. Se non ne arriva uno, si ricade sul
+            # nome reale come si e' sempre fatto.
+            auth_username = re.sub(r'[^a-z0-9._-]', '', nomeUtenteRichiesto.lower().replace(" ", "."))
+            if len(auth_username) == 0:
+                auth_username = re.sub(r'[^a-z0-9._-]', '', name.lower().replace(" ", "."))
             
             self.logger.info(f"[CloudWorker] Setting initial credentials for {auth_username}...")
             

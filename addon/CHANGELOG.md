@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.57
+
+- 👤 Chi aggiunge una persona può scegliere il suo nome utente, invece di lasciarlo derivare dal nome reale. È il nome con cui quella persona entrerà nel sistema, e chi lo assegna deve poi comunicarglielo: sceglierlo è meglio che indovinarlo.
+
 ## 2.7.56
 
 - 🛑 Il pulsante di azzeramento si spegne dopo aver fatto il suo lavoro. Prima l'etichetta diventava «Fatto. Ora spegni l'apparecchio.» ma restava un pulsante armato: chi la leggeva come una conferma e la premeva faceva ripartire l'azzeramento.
