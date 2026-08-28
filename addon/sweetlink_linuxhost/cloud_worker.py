@@ -143,11 +143,31 @@ class CloudWorker:
         except Exception: pass
         return []
 
-    def _add_tracked_user(self, user_id):
+    # L'identificativo della persona, sia che la voce sia una stringa (come le scriveva la
+    # versione precedente) sia che sia un oggetto.
+    @staticmethod
+    def _tracked_id(entry):
+        return entry.get('id') if isinstance(entry, dict) else entry
+
+    # Da identificativo della persona a nome di accesso.
+    #
+    # QUESTO SCHEDARIO E' L'UNICA FONTE DEL NOME DI ACCESSO, e non e' un ripiego.
+    # L'elenco delle persone si costruisce dalle entita' person di Home Assistant, che il nome
+    # di accesso non ce l'hanno: la persona e l'utente sono due cose separate, legate solo da
+    # user_id. Il nome di accesso lo scegliamo noi al momento della creazione ed e' l'unico
+    # momento in cui lo sappiamo con certezza, quindi si scrive qui.
+    def _tracked_usernames(self):
+        indice = {}
+        for entry in self._get_tracked_users():
+            if isinstance(entry, dict):
+                indice[entry.get('id')] = entry.get('username') or ''
+        return indice
+
+    def _add_tracked_user(self, user_id, username=''):
         try:
             tracked = self._get_tracked_users()
-            if user_id not in tracked:
-                tracked.append(user_id)
+            if user_id not in [CloudWorker._tracked_id(e) for e in tracked]:
+                tracked.append({'id': user_id, 'username': username})
                 path = os.path.join(self.storage_dir, 'sweetplace_users.json')
                 with open(path, 'w') as f:
                     json.dump(tracked, f)
@@ -157,11 +177,11 @@ class CloudWorker:
     def _remove_tracked_user(self, user_id):
         try:
             tracked = self._get_tracked_users()
-            if user_id in tracked:
-                tracked.remove(user_id)
+            rimasti = [e for e in tracked if CloudWorker._tracked_id(e) != user_id]
+            if len(rimasti) != len(tracked):
                 path = os.path.join(self.storage_dir, 'sweetplace_users.json')
                 with open(path, 'w') as f:
-                    json.dump(tracked, f)
+                    json.dump(rimasti, f)
         except Exception as e:
             self.logger.error(f"[CloudWorker] Warning: Failed to remove tracked user: {e}")
 
@@ -193,7 +213,8 @@ class CloudWorker:
             elif not isinstance(all_states, list):
                 all_states = []
                 
-            tracked_users = self._get_tracked_users()
+            tracked_users = [CloudWorker._tracked_id(e) for e in self._get_tracked_users()]
+            nomi_accesso = self._tracked_usernames()
             filtered_users = []
             
             for state_obj in all_states:
@@ -213,6 +234,10 @@ class CloudWorker:
                     "id": person_id,
                     "auth_id": attrs.get('user_id'),
                     "name": friendly_name,
+                    # Stringa vuota se non lo sappiamo. Chi disegna l'elenco NON deve ricavarlo
+                    # dall'identificativo della persona: sono due cose diverse, e mostrare l'una
+                    # al posto dell'altra dice al proprietario un nome di accesso che non esiste.
+                    "username": nomi_accesso.get(person_id, ''),
                     "entity_id": entity_id
                 })
                 
@@ -331,7 +356,7 @@ class CloudWorker:
             person_id = person_data.get('id', auth_user_id) # Fallback su auth id
             
             # Tracciamo l'ID persona generato
-            self._add_tracked_user(person_id)
+            self._add_tracked_user(person_id, auth_username)
                 
             self.logger.info(f"[CloudWorker] Successfully orchestrated User '{name}' -> Person '{person_id}' in HA.")
             

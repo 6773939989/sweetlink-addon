@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.59
+
+- 🔑 L'elenco dei membri mostra il nome di accesso vero. Prima lo fabbricava dall'identificativo della persona sostituendo i trattini bassi con i punti: chi registrava «Mario Rossi» con nome di accesso `marior` se lo vedeva scritto `mario.rossi`, e lo comunicava sbagliato alla persona, che non riusciva a entrare. Ora il nome viene dall'add-on, che lo registra quando crea l'utente; se non lo sa, non scrive niente invece di inventarlo.
+- 📏 Le righe dei membri sono alte quanto i pulsanti. Erano più alte in visualizzazione e tornavano dell'altezza giusta in modifica: lo stesso elemento aveva due altezze.
+- 📍 L'indirizzo di casa parte dalla stessa verticale del nome nel logo, e c'è più aria fra l'intestazione e l'elenco.
+
 ## 2.7.58
 
 - 🧬 Il referto prima della clonazione conta gli account del sistema operativo e si blocca se ne trova. Vivono sul disco insieme a tutto il resto: un'immagine preparata su un apparecchio già configurato consegnerebbe a ogni cliente l'account di chi l'ha preparata, con la sua password e i telefoni già accoppiati.
