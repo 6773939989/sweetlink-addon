@@ -834,6 +834,15 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     .redFeatureButton:hover {
         background-color: #b23025;
     }
+    /* Il pulsante che ha gia' fatto il suo lavoro: resta leggibile, ma smette di sembrare
+       qualcosa da premere. Deve stare DOPO redFeatureButton, altrimenti a parita' di
+       specificita' vincerebbe il rosso e il pulsante esaurito sembrerebbe ancora armato. */
+    .featureButtonSpento,
+    .featureButtonSpento:hover {
+        background-color: var(--secondary-background-color);
+        color: var(--secondary-text-color);
+        cursor: default;
+    }
 </style>
 </head>
 <body>
@@ -904,14 +913,35 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         const prepResult = document.getElementById("prepResult");
         if(prepButton && prepConfirm && prepResult)
         {
+            // Una volta sola. Dopo l'azzeramento il pulsante si spegne e non si riarma.
+            //
+            // Prima l'etichetta diventava "Fatto. Ora spegni l'apparecchio." ma il pulsante
+            // restava un pulsante, con lo stesso gestore e la parola di conferma ancora nel
+            // campo: chi la leggeva come una conferma e la premeva faceva ripartire
+            // l'azzeramento. E a quel punto l'add-on si era gia' fermato, quindi la seconda
+            // richiesta moriva contro l'Ingress e l'unica cosa che il pannello sapeva dire era
+            // un errore di sintassi JSON.
+            let esaurito = false;
+
+            const spegniIlPulsante = (testo) => {
+                esaurito = true;
+                prepButton.textContent = testo;
+                prepButton.classList.add("featureButtonSpento");
+                prepConfirm.value = "";
+                prepConfirm.disabled = true;
+            };
+
             prepButton.onclick = () => {
+                if(esaurito) { return; }
                 const parola = prepConfirm.value.trim().toUpperCase();
                 if(parola !== "AZZERA")
                 {
                     prepResult.textContent = "Scrivi AZZERA nel campo qui sopra per confermare.";
                     return;
                 }
+                esaurito = true;   // gia' da adesso: due clic rapidi sono due azzeramenti.
                 prepButton.textContent = "Azzeramento in corso...";
+                prepButton.classList.add("featureButtonSpento");
                 // Il percorso e' relativo alla pagina: sotto l'Ingress la base cambia a ogni
                 // sessione, quindi non si puo' scrivere un percorso assoluto.
                 const base = window.location.pathname.endsWith("/") ? window.location.pathname : window.location.pathname + "/";
@@ -920,24 +950,45 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ confirm: parola })
                 })
-                .then((r) => r.json())
-                .then((d) => {
+                // Il corpo si legge come TESTO e si prova a interpretarlo, invece di darlo per
+                // buono con r.json(). Quando l'add-on si e' fermato, l'Ingress risponde con un
+                // testo tipo "502 Bad Gateway": r.json() ci legge il numero 502 e poi inciampa
+                // sulla B, e l'utente si ritrova un errore di sintassi JSON al posto di una
+                // spiegazione.
+                .then((r) => r.text().then((testo) => ({ stato: r.status, testo: testo })))
+                .then((risposta) => {
+                    let d = null;
+                    try { d = JSON.parse(risposta.testo); } catch (e) { d = null; }
+
+                    if(d === null)
+                    {
+                        prepResult.textContent = "L'add-on non ha risposto in modo leggibile (HTTP "
+                            + risposta.stato + "). Succede quando si e' gia' fermato, che dopo un "
+                            + "azzeramento riuscito e' quello che deve fare. Controlla i log prima di clonare.";
+                        spegniIlPulsante("Esito da verificare nei log");
+                        return;
+                    }
                     if(d.error)
                     {
                         prepResult.textContent = "Errore: " + d.error;
+                        // Questo NON e' un azzeramento avvenuto: il pulsante si riarma.
+                        esaurito = false;
+                        prepButton.classList.remove("featureButtonSpento");
                         prepButton.textContent = "Azzera e prepara la clonazione";
                         return;
                     }
                     const righe = (d.actions || []).map((a) => a.level.toUpperCase() + "  " + a.title + ": " + a.detail);
                     const bloccato = (d.actions || []).some((a) => a.level === "block");
                     prepResult.textContent = righe.join("\\n");
-                    prepButton.textContent = bloccato ? "Con errori: leggi qui sotto, NON clonare" : "Fatto. Ora spegni l'apparecchio.";
+                    spegniIlPulsante(bloccato ? "Con errori: leggi qui sotto, NON clonare" : "Fatto. Ora spegni l'apparecchio.");
                 })
                 .catch((e) => {
-                    // L'add-on si ferma da solo subito dopo l'azzeramento: la richiesta puo'
-                    // morire a meta' proprio perche' e' andata a buon fine.
-                    prepResult.textContent = "Risposta non ricevuta (" + e + "). L'add-on potrebbe essersi gia' fermato: controlla i log prima di clonare.";
-                    prepButton.textContent = "Azzera e prepara la clonazione";
+                    // La richiesta non e' nemmeno arrivata a destinazione. Anche qui non si
+                    // riarma: l'azzeramento potrebbe essere avvenuto lo stesso, e ripeterlo alla
+                    // cieca non aiuta nessuno.
+                    prepResult.textContent = "Richiesta interrotta (" + e + "). L'add-on potrebbe "
+                        + "essersi gia' fermato: controlla i log prima di clonare.";
+                    spegniIlPulsante("Esito da verificare nei log");
                 });
             };
         }

@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.56
+
+- 🛑 Il pulsante di azzeramento si spegne dopo aver fatto il suo lavoro. Prima l'etichetta diventava «Fatto. Ora spegni l'apparecchio.» ma restava un pulsante armato: chi la leggeva come una conferma e la premeva faceva ripartire l'azzeramento.
+- 🔎 Quando l'add-on si è già fermato, il pannello lo dice invece di mostrare un errore di sintassi incomprensibile.
+
 ## 2.7.55
 
 - 🏷️ L'add-on si chiama **Sweetlink**, anche nel menu laterale.
