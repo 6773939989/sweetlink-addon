@@ -165,11 +165,25 @@ class CloudWorker:
                 indice[entry.get('id')] = entry.get('username') or ''
         return indice
 
-    def _add_tracked_user(self, user_id, username=''):
+    # Da identificativo della persona a identificativo dell'UTENTE.
+    #
+    # E' l'unico dato certo che abbiamo: al momento della creazione Home Assistant ci dice
+    # l'identificativo dell'utente, e lo scriviamo. Ricavarlo dopo dall'entita' persona vuol dire
+    # fidarsi di un attributo, e su un hub vero quell'attributo ha restituito un identificativo di
+    # PERSONA — con il risultato che la rigenerazione della password moriva su "nessun utente
+    # corrisponde a 'mariotti_pippo'".
+    def _tracked_auth_ids(self):
+        indice = {}
+        for entry in self._get_tracked_users():
+            if isinstance(entry, dict) and entry.get('auth_id'):
+                indice[entry.get('id')] = entry.get('auth_id')
+        return indice
+
+    def _add_tracked_user(self, user_id, username='', auth_id=''):
         try:
             tracked = self._get_tracked_users()
             if user_id not in [CloudWorker._tracked_id(e) for e in tracked]:
-                tracked.append({'id': user_id, 'username': username})
+                tracked.append({'id': user_id, 'username': username, 'auth_id': auth_id})
                 path = os.path.join(self.storage_dir, 'sweetplace_users.json')
                 with open(path, 'w') as f:
                     json.dump(tracked, f)
@@ -367,6 +381,34 @@ class CloudWorker:
                 
             tracked_users = [CloudWorker._tracked_id(e) for e in self._get_tracked_users()]
             nomi_accesso = self._tracked_usernames()
+            auth_registrati = self._tracked_auth_ids()
+
+            # L'ANAGRAFICA DEGLI UTENTI, PER NON MANDARE FUORI UN IDENTIFICATIVO CHE NON ESISTE.
+            #
+            # L'elenco riportava auth_id copiandolo dall'attributo user_id dell'entita' persona,
+            # senza controllare che fosse davvero un utente. Su un hub vero quell'attributo
+            # conteneva l'identificativo della persona: il portale se lo prendeva per buono, lo
+            # scriveva nel gettone d'invito, e la password moriva molto piu' avanti — dentro
+            # l'add-on, davanti alla persona sbagliata, con un messaggio che non poteva dire da
+            # dove venisse il guaio.
+            # Qui l'anagrafica ce l'abbiamo. Un identificativo che non e' in quell'elenco non
+            # esce: meglio un comando spento con scritto perche', che uno che fallisce dopo.
+            elenco_utenti = []
+            try:
+                risposta_utenti = self.ha_connection.SendAndReceiveMsg({"type": "config/auth/list"}, timeout=5.0)
+                if risposta_utenti and risposta_utenti.get('success'):
+                    elenco_utenti = risposta_utenti.get('result', []) or []
+            except Exception as e:
+                self.logger.warning(f"[CloudWorker] Anagrafica utenti non disponibile: {e}")
+            id_utenti = {u.get('id') for u in elenco_utenti if isinstance(u, dict)}
+            # Da nome di accesso a identificativo, per le persone registrate prima che lo
+            # schedario cominciasse a scriverlo. Il confronto e' esatto su un valore unico in
+            # Home Assistant, non una somiglianza fra nomi: quello sbaglia persona.
+            per_nome_accesso = {}
+            for u in elenco_utenti:
+                if isinstance(u, dict) and u.get('username'):
+                    per_nome_accesso[u.get('username')] = u.get('id')
+
             filtered_users = []
             
             for state_obj in all_states:
@@ -382,9 +424,25 @@ class CloudWorker:
                 if person_id not in tracked_users:
                     continue
                     
+                # Tre strade, e tutte finiscono contro l'anagrafica: quello che abbiamo scritto
+                # noi alla creazione, poi l'attributo dell'entita', poi il nome di accesso. La
+                # prima che da' un utente vero vince; se non ne da' nessuna, esce vuoto.
+                nome_accesso = nomi_accesso.get(person_id, '')
+                auth_id = ''
+                for candidato in (auth_registrati.get(person_id),
+                                  attrs.get('user_id'),
+                                  per_nome_accesso.get(nome_accesso)):
+                    if candidato and (not id_utenti or candidato in id_utenti):
+                        auth_id = candidato
+                        break
+                if not auth_id:
+                    self.logger.warning(
+                        f"[CloudWorker] Nessun utente di Home Assistant per la persona {person_id!r} "
+                        f"(nome di accesso {nome_accesso!r}): le azioni sulle sue credenziali restano spente.")
+
                 filtered_users.append({
                     "id": person_id,
-                    "auth_id": attrs.get('user_id'),
+                    "auth_id": auth_id,
                     "name": friendly_name,
                     # Stringa vuota se non lo sappiamo. Chi disegna l'elenco NON deve ricavarlo
                     # dall'identificativo della persona: sono due cose diverse, e mostrare l'una
@@ -525,8 +583,9 @@ class CloudWorker:
             person_data = person_result_raw.get('person', person_result_raw) if isinstance(person_result_raw, dict) else {}
             person_id = person_data.get('id', auth_user_id) # Fallback su auth id
             
-            # Tracciamo l'ID persona generato
-            self._add_tracked_user(person_id, auth_username)
+            # Tracciamo l'ID persona generato, insieme all'utente a cui e' legata: e' qui che
+            # quel legame si conosce con certezza, e da nessun'altra parte.
+            self._add_tracked_user(person_id, auth_username, auth_user_id)
                 
             self.logger.info(f"[CloudWorker] Successfully orchestrated User '{name}' -> Person '{person_id}' in HA.")
             
@@ -703,6 +762,16 @@ class CloudWorker:
                     resolved_user_id = u.get('id')
                     self.logger.info(f"[CloudWorker] Utente trovato per identificativo: {resolved_user_id}")
                     break
+
+            # Il nome di accesso e' unico in Home Assistant: se l'anagrafica lo riporta, il
+            # confronto esatto identifica la persona senza margine. Va provato PRIMA della
+            # somiglianza fra nomi qui sotto, che invece un margine ce l'ha.
+            if resolved_user_id is None and username:
+                for u in utenti:
+                    if isinstance(u, dict) and u.get('username') == username:
+                        resolved_user_id = u.get('id')
+                        self.logger.info(f"[CloudWorker] Utente trovato per nome di accesso: {resolved_user_id}")
+                        break
 
             if resolved_user_id is None and username:
                 target = username.lower().replace('_', '.')

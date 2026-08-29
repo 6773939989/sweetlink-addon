@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.75
+
+- 🐛 L'elenco delle persone di casa riportava, come identificativo dell'utente, quello della persona: la rigenerazione della password moriva con «nessun utente corrisponde». Adesso l'add-on ricorda il legame da quando crea l'account, e qualunque identificativo esca viene verificato contro l'anagrafica di Home Assistant.
+
 ## 2.7.74
 
 - 🔒 La password di un account amministratore non si cambia piu' dal portale. Gli account che creiamo noi stanno fra gli utenti normali; quello dell'installatore no, e adesso c'e' un confine che lo separa.
