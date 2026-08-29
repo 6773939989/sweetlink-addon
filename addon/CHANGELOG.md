@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.77
+
+- 🔒 Riprendersi la propria riga dopo aver rigenerato l'identità richiede ora anche la chiave precedente, non il solo identificativo: quello non è un segreto, e bastava per farsi consegnare il tunnel di una casa altrui.
+- 🔒 Il gettone del tunnel non passa più dalla riga di comando, dove lo leggeva chiunque avesse una shell sull'hub.
+- 🐛 Lo schedario degli utenti si scrive in modo atomico: un'interruzione a metà lo azzerava, e da lì l'add-on non riconosceva più nessuno degli account creati.
+
 ## 2.7.76
 
 - 🔒 Per ottenere il tunnel l'apparecchio deve presentare la propria chiave privata. Prima bastava un identificativo, e chi otteneva quel gettone poteva diventare l'altro capo dell'indirizzo pubblico della casa.

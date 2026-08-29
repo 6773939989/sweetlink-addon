@@ -127,8 +127,29 @@ class CloudflareManager:
 
             try:
                 # Spawn cloudflared run --token [TOKEN] --no-autoupdate
+                # IL GETTONE PASSA DALL'AMBIENTE, NON DALLA RIGA DI COMANDO.
+                #
+                # Era "--token <gettone>". La riga di comando di un processo sta in
+                # /proc/<pid>/cmdline, che e' leggibile da CHIUNQUE sulla macchina: bastava un
+                # "ps" da una shell sull'hub per portarsi via il gettone del tunnel, e con quello
+                # si diventa l'altro capo dell'indirizzo pubblico di quella casa.
+                #
+                # TUNNEL_TOKEN e' il modo documentato di darglielo, ed e' quello che usa anche
+                # l'immagine ufficiale di cloudflared. L'ambiente di un processo sta in
+                # /proc/<pid>/environ, che al contrario di cmdline lo legge solo il proprietario
+                # del processo. Non e' segretezza assoluta — qui dentro tutto gira da root — ma
+                # toglie di mezzo il caso che conta: chiunque passi di li' senza essere root.
+                #
+                # Nel binario esiste anche --token-file, che lo terrebbe fuori pure
+                # dall'ambiente. Non l'abbiamo usato perche' non abbiamo potuto verificare che
+                # valga per "tunnel run": il binario e' per Linux e da qui non si esegue. E' il
+                # passo successivo, se un giorno serve.
+                ambiente = dict(os.environ)
+                ambiente["TUNNEL_TOKEN"] = token
+
                 self.Subprocess = subprocess.Popen(
-                    [self.BinaryPath, "tunnel", "--no-autoupdate", "run", "--token", token],
+                    [self.BinaryPath, "tunnel", "--no-autoupdate", "run"],
+                    env=ambiente,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     universal_newlines=True,

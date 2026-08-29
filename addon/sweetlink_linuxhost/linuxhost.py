@@ -570,6 +570,7 @@ class LinuxHost(IStateChangeHandler):
                     # Resta in memoria e non sul disco: sul disco verrebbe clonato insieme
                     # all'immagine, e ogni copia si presenterebbe con la prova di un apparecchio
                     # che non e' lei.
+                    chiavePrecedente = None
                     identitaPrecedente = None
                     while True:
                         # Un apparecchio azzerato per la clonazione non deve registrarsi: non ha
@@ -616,6 +617,11 @@ class LinuxHost(IStateChangeHandler):
                             payload = {"macs": macs, "plugin_id": currentPluginId, "app_url": app_url, "private_key": currentPrivateKey}
                             if identitaPrecedente is not None:
                                 payload["previous_plugin_id"] = identitaPrecedente
+                                # LA PROVA E' LA CHIAVE, NON L'IDENTIFICATIVO.
+                                # Il plugin_id precedente non e' un segreto: compare nei registri,
+                                # nel pannello e nelle email di assistenza. La chiave privata si',
+                                # e ce l'abbiamo ancora in mano nel momento in cui rigeneriamo.
+                                payload["previous_private_key"] = chiavePrecedente
                             self.Logger.info(f"Sweetplace Onboarding: Reporting MAC Array {macs} and AppURL [{app_url}] to {api_url}")
 
                             response = requests.post(api_url, json=payload, timeout=10)
@@ -669,9 +675,16 @@ class LinuxHost(IStateChangeHandler):
                                 # saperlo con certezza, perche' e' l'unico che li vede tutti.
                                 rigenerazioni += 1
                                 self.Logger.error("Sweetplace Onboarding: il backend segnala che questa identita' appartiene gia' a un altro apparecchio. La rigenero e riprovo.")
-                                # Prima di cancellarla: e' l'unica cosa che potra' dimostrare al
+                                # Prima di cancellarle: sono le due cose che potranno dimostrare al
                                 # backend che la riga esistente e' nostra.
+                                #
+                                # Il plugin_id da solo NON basta e non bastava: e' un
+                                # identificativo, non un segreto — sta nei registri, nel pannello
+                                # e nelle email di assistenza. Chi lo conosceva, insieme a un MAC
+                                # dell'apparecchio, poteva far riassegnare la riga a se' stesso e
+                                # da li' chiedere il gettone del tunnel.
                                 identitaPrecedente = currentPluginId
+                                chiavePrecedente = currentPrivateKey
                                 self.Secrets.SetPluginId(None)
                                 self.Secrets.SetPrivateKey(None)
                                 self.DoFirstTimeSetupIfNeeded()

@@ -2,6 +2,7 @@ import os
 import time
 import json
 import re
+import tempfile
 import threading
 import requests
 import socketio
@@ -21,7 +22,7 @@ class CloudWorker:
         self.plugin_id = None
         self.private_key = None
         self.sio = socketio.Client(reconnection=True, reconnection_delay=5, reconnection_delay_max=30)
-        
+
         # Registra i listener del SocketIO
         self.sio.on('connect', self._on_connect)
         self.sio.on('disconnect', self._on_disconnect)
@@ -179,14 +180,50 @@ class CloudWorker:
                 indice[entry.get('id')] = entry.get('auth_id')
         return indice
 
+    # LO SCHEDARIO SI SCRIVE COME SI SCRIVONO I SEGRETI, E NON E' ZELO.
+    #
+    # PERMESSI. Si scriveva con un open() normale, quindi con i permessi che l'umask concede —
+    # in pratica leggibile da chiunque sulla macchina. Dentro ci sono i nomi di accesso di tutte
+    # le persone di casa: non sono password, ma sono la meta' di una credenziale, e l'altra meta'
+    # e' quello che si prova a indovinare. Adesso 0600, come il file dei segreti accanto.
+    #
+    # ATOMICITA', che qui conta piu' dei permessi. Il file si riscriveva per intero al posto: una
+    # mancanza di corrente in quell'istante lasciava un JSON tagliato a meta', _get_tracked_users
+    # ci inciampava, restituiva una lista vuota — e da quel momento l'add-on non riconosceva PIU'
+    # NESSUNO degli utenti che aveva creato. L'elenco delle persone di casa si svuota, la
+    # rigenerazione delle password smette di funzionare per tutti, e non c'e' nessun errore da
+    # nessuna parte perche' l'eccezione e' catturata e la lista vuota e' un valore legittimo.
+    #
+    # Si scrive su un temporaneo nella stessa cartella, si forza sul disco, e si rinomina sopra:
+    # os.replace e' atomica, quindi chi legge trova sempre o la versione di prima per intero o
+    # quella nuova per intero. E' la stessa forma di secrets.py, e per la stessa ragione.
+    def _scrivi_schedario(self, voci):
+        percorso = os.path.join(self.storage_dir, 'sweetplace_users.json')
+        cartella = os.path.dirname(percorso) or "."
+        fd, temporaneo = tempfile.mkstemp(dir=cartella, prefix='sweetplace_users.', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(voci, f)
+                # Senza queste due righe la rinomina puo' raggiungere il disco prima dei dati:
+                # dopo un'interruzione il file esisterebbe, ma vuoto.
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporaneo, percorso)
+        except Exception:
+            # Il file precedente e' rimasto intatto: si butta via solo lo scarto.
+            try:
+                if os.path.exists(temporaneo):
+                    os.remove(temporaneo)
+            except Exception:
+                pass
+            raise
+
     def _add_tracked_user(self, user_id, username='', auth_id=''):
         try:
             tracked = self._get_tracked_users()
             if user_id not in [CloudWorker._tracked_id(e) for e in tracked]:
                 tracked.append({'id': user_id, 'username': username, 'auth_id': auth_id})
-                path = os.path.join(self.storage_dir, 'sweetplace_users.json')
-                with open(path, 'w') as f:
-                    json.dump(tracked, f)
+                self._scrivi_schedario(tracked)
         except Exception as e:
             self.logger.error(f"[CloudWorker] Warning: Failed to save tracked user: {e}")
 
@@ -195,9 +232,7 @@ class CloudWorker:
             tracked = self._get_tracked_users()
             rimasti = [e for e in tracked if CloudWorker._tracked_id(e) != user_id]
             if len(rimasti) != len(tracked):
-                path = os.path.join(self.storage_dir, 'sweetplace_users.json')
-                with open(path, 'w') as f:
-                    json.dump(rimasti, f)
+                self._scrivi_schedario(rimasti)
         except Exception as e:
             self.logger.error(f"[CloudWorker] Warning: Failed to remove tracked user: {e}")
 
@@ -354,31 +389,31 @@ class CloudWorker:
     def _on_fetch_users(self, data):
         request_id = data.get('requestId')
         self.logger.info(f"[CloudWorker] Requested HA Users by Cloud. Request ID: {request_id}")
-        
+
         try:
             if not self.ha_connection:
                 raise Exception("HA WebSocket non inizializzato nel Worker")
-                
+
             # Warm-up loop per gestire Race Conditions all'avvio dell'AddOn
             wait_time = 0
             while not getattr(self.ha_connection, 'IsConnected', False) and wait_time < 10:
                 time.sleep(1)
                 wait_time += 1
-                
+
             if not getattr(self.ha_connection, 'IsConnected', False):
                 raise Exception("HA WebSocket Auth is still pending or Offline.")
-                
+
             response = self.ha_connection.SendAndReceiveMsg({"type": "get_states"})
             if not response or not response.get('success', False):
                 err_msg = response.get('error', {}).get('message', 'Unknown Error') if response else 'Timeout Or Disconnected'
                 raise Exception(f"Failed to fetch states from HA WebSocket: {err_msg}")
-            
+
             all_states = response.get('result', [])
             if isinstance(all_states, dict):
                 all_states = list(all_states.values())
             elif not isinstance(all_states, list):
                 all_states = []
-                
+
             tracked_users = [CloudWorker._tracked_id(e) for e in self._get_tracked_users()]
             nomi_accesso = self._tracked_usernames()
             auth_registrati = self._tracked_auth_ids()
@@ -410,20 +445,20 @@ class CloudWorker:
                     per_nome_accesso[u.get('username')] = u.get('id')
 
             filtered_users = []
-            
+
             for state_obj in all_states:
                 if not isinstance(state_obj, dict): continue
-                
+
                 entity_id = state_obj.get('entity_id', '')
                 if not str(entity_id).startswith('person.'): continue
-                
+
                 attrs = state_obj.get('attributes', {})
                 person_id = attrs.get('id') or attrs.get('user_id') or entity_id
                 friendly_name = attrs.get('friendly_name', entity_id)
-                
+
                 if person_id not in tracked_users:
                     continue
-                    
+
                 # Tre strade, e tutte finiscono contro l'anagrafica: quello che abbiamo scritto
                 # noi alla creazione, poi l'attributo dell'entita', poi il nome di accesso. La
                 # prima che da' un utente vero vince; se non ne da' nessuna, esce vuoto.
@@ -450,17 +485,17 @@ class CloudWorker:
                     "username": nomi_accesso.get(person_id, ''),
                     "entity_id": entity_id
                 })
-                
+
             self.logger.info(f"[CloudWorker] Found {len(filtered_users)} standard users. Sending to Cloud.")
             self.sio.emit('command_fetch_users_result', {
-                'requestId': request_id, 
+                'requestId': request_id,
                 'users': filtered_users,
                 'error': None
             })
         except Exception as e:
             self.logger.error(f"[CloudWorker] Error fetching users via HA Socket: {str(e)}")
             self.sio.emit('command_fetch_users_result', {
-                'requestId': request_id, 
+                'requestId': request_id,
                 'users': [],
                 'error': f"Home Assistant Local WebSocket API Error: {str(e)}"
             })
@@ -480,34 +515,34 @@ class CloudWorker:
         try:
             if not self.ha_connection:
                 raise Exception("HA WebSocket non inizializzato")
-                
+
             # Warm-up loop
             wait_time = 0
             while not getattr(self.ha_connection, 'IsConnected', False) and wait_time < 10:
                 time.sleep(1)
                 wait_time += 1
-                
+
             if not getattr(self.ha_connection, 'IsConnected', False):
                 raise Exception("HA WebSocket Auth is still pending or Offline.")
-                
+
             # STEP 1: Creazione Utente di Sistema (NON Amministratore)
             auth_response = self.ha_connection.SendMsg({
                 "type": "config/auth/create",
                 "name": name,
                 "group_ids": ["system-users"]
             }, waitForResponse=True)
-            
+
             if not auth_response or not auth_response.get('success', False):
                 err_msg = auth_response.get('error', {}).get('message', 'Unknown Error') if auth_response else 'Timeout Or Disconnected'
                 raise Exception(f"Failed to create System User via HA WebSocket: {err_msg}")
-                
+
             auth_result_raw = auth_response.get('result', {})
             user_data = auth_result_raw.get('user', auth_result_raw) if isinstance(auth_result_raw, dict) else {}
             auth_user_id = user_data.get('id')
-            
+
             if not auth_user_id:
                 raise Exception("System User creato ma ID mancante nella risposta!")
-                
+
             # IMPORTANTE: Creiamo le credenziali atomiche SOLO quando siamo sicuri che l'utente sia stato "digerito"
             # da Home Assistant. Eseguiamo un polling della lista auth di HA.
             user_ready = False
@@ -519,10 +554,10 @@ class CloudWorker:
                         user_ready = True
                         break
                 time.sleep(0.3)
-                
+
             if not user_ready:
                 raise Exception("Home Assistant non ha persistito l'utente di sistema nei tempi previsti (Timeout).")
-                
+
             # LA PASSWORD INIZIALE: LUNGA, CASUALE PER DAVVERO, E CHE NON ESCE DA QUI.
             #
             # Era un PIN di 8 cifre generato con random.choices, cioe' con il Mersenne Twister:
@@ -550,9 +585,9 @@ class CloudWorker:
             auth_username = re.sub(r'[^a-z0-9._-]', '', nomeUtenteRichiesto.lower().replace(" ", "."))
             if len(auth_username) == 0:
                 auth_username = re.sub(r'[^a-z0-9._-]', '', name.lower().replace(" ", "."))
-            
+
             self.logger.info(f"[CloudWorker] Setting initial credentials for {auth_username}...")
-            
+
             # Utilizziamo SendAndReceiveMsg con un timeout breve per evitare blocchi permanenti se HA dovesse droppare di nuovo
             # Evita il blocco di 30s asincrono.
             cred_response = self.ha_connection.SendAndReceiveMsg({
@@ -561,7 +596,7 @@ class CloudWorker:
                 "username": auth_username,
                 "password": password_iniziale
             }, timeout=3.0)
-            
+
             if not cred_response or not cred_response.get('success'):
                 err_msg = cred_response.get('error', {}).get('message', 'Timeout o Drop HA') if cred_response else 'Timeout'
                 self.logger.error(f"[CloudWorker] Failed to set initial PIN for {auth_username}: {err_msg}")
@@ -574,23 +609,23 @@ class CloudWorker:
                 "user_id": auth_user_id,
                 "device_trackers": []
             }, waitForResponse=True)
-            
+
             if not person_response or not person_response.get('success', False):
                 err_msg = person_response.get('error', {}).get('message', 'Unknown Error') if person_response else 'Timeout Or Disconnected'
                 raise Exception(f"Auth Success, but Person creation via HA WebSocket failed: {err_msg}")
-                
+
             person_result_raw = person_response.get('result', {})
             person_data = person_result_raw.get('person', person_result_raw) if isinstance(person_result_raw, dict) else {}
             person_id = person_data.get('id', auth_user_id) # Fallback su auth id
-            
+
             # Tracciamo l'ID persona generato, insieme all'utente a cui e' legata: e' qui che
             # quel legame si conosce con certezza, e da nessun'altra parte.
             self._add_tracked_user(person_id, auth_username, auth_user_id)
-                
+
             self.logger.info(f"[CloudWorker] Successfully orchestrated User '{name}' -> Person '{person_id}' in HA.")
-            
+
             self.sio.emit('command_create_user_result', {
-                'requestId': request_id, 
+                'requestId': request_id,
                 'success': True,
                 # La password iniziale NON viaggia verso il cloud: nessuno la legge, e una
                 # credenziale che attraversa la rete senza che serva a niente e' solo una
@@ -606,7 +641,7 @@ class CloudWorker:
         except Exception as e:
             self.logger.error(f"[CloudWorker] Error creating user: {str(e)}")
             self.sio.emit('command_create_user_result', {
-                'requestId': request_id, 
+                'requestId': request_id,
                 'success': False,
                 'error': str(e)
             })
@@ -621,7 +656,7 @@ class CloudWorker:
         try:
             if not self.ha_connection:
                 raise Exception("HA WebSocket non inizializzato")
-            
+
             # Auth alias update
             if auth_id:
                 self.ha_connection.SendAndReceiveMsg({
@@ -629,14 +664,14 @@ class CloudWorker:
                     "user_id": auth_id,
                     "name": new_name
                 })
-            
+
             # Person layer update
             person_response = self.ha_connection.SendAndReceiveMsg({
                 "type": "person/update",
                 "person_id": person_id,
                 "name": new_name
             })
-            
+
             if not person_response or not person_response.get('success', False):
                 err_msg = person_response.get('error', {}).get('message', 'Unknown Error') if person_response else 'Timeout'
                 raise Exception(f"Failed to update User via HA WebSocket: {err_msg}")
@@ -659,7 +694,7 @@ class CloudWorker:
         try:
             if not self.ha_connection:
                 raise Exception("HA WebSocket non inizializzato")
-                
+
             self.logger.info('Purging Person Layer...')
             p_resp = self.ha_connection.SendAndReceiveMsg({
                 "type": "person/delete",
@@ -723,20 +758,20 @@ class CloudWorker:
         auth_id = data.get('auth_id')
         password = data.get('password')
         username = data.get('username')
-        
+
         self.logger.info(f"[CloudWorker] Generating one-time password for auth_id={auth_id}, username={username}, reqId={req_id}")
-        
+
         try:
             if not self.ha_connection:
                 raise Exception("HA WebSocket non inizializzato")
-                
+
             wait_time = 0
             while not getattr(self.ha_connection, 'IsConnected', False) and wait_time < 10:
                 time.sleep(1)
                 wait_time += 1
             if not getattr(self.ha_connection, 'IsConnected', False):
                 raise Exception("HA WebSocket not connected.")
-                
+
             # L'IDENTIFICATIVO SI CERCA PRIMA PER CORRISPONDENZA ESATTA, POI PER NOME.
             #
             # Il ripiego per nome confrontava il nome VISUALIZZATO con il nome di ACCESSO, e
@@ -812,7 +847,7 @@ class CloudWorker:
             # Dal momento che `admin_change_password` fallisce sempre con "Unauthorized" se il token dell'addon
             # non ha privilegi 'Owner' (gli Addon solitamente hanno solo 'Admin'), noi AGGIRIAMO il problema
             # eliminando esplicitamente le credenziali e ricreandole, dato che `create` e `delete` richiedono solo 'Admin'.
-            
+
             if username:
                 self.logger.info(f"[CloudWorker] Deleting old credentials for {username} if they exist...")
                 self.ha_connection.SendAndReceiveMsg({
@@ -874,8 +909,8 @@ class CloudWorker:
                     })
             except Exception as e:
                 self.logger.warning(f"[CloudWorker] Connection to cloud failed, retrying in 10s... ({str(e)})")
-                
+
             time.sleep(10)
-            
+
 # Globale Singleton
 CloudWorkerInstance = CloudWorker()
