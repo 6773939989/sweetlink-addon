@@ -16,9 +16,11 @@ generated identity: a plugin id and a private key that never leave the device ex
 authenticate it. The public hostname is minted by the backend, not chosen here.
 
 **Puts the hub on the internet through its own tunnel.** The backend provisions a Cloudflare
-tunnel and the DNS record that points at it; the add-on runs the connector. The address is derived
-from the hardware, so it is stable for the life of the device and survives a tunnel being
-recreated.
+tunnel and the DNS record that points at it; the add-on runs the connector. The public name is a
+random 122-bit label minted once and kept on the device's row, so it is stable for the life of the
+device and survives a tunnel being recreated. It is deliberately *not* derived from the hardware:
+a MAC is known to anyone who has ever been on the same local network, and only 24 bits of it vary
+within a vendor prefix.
 
 **Hands the hub to its owner.** A code is printed on the label under the device, next to a QR the
 add-on draws in its own panel. The customer scans it, confirms an email address, and from that
