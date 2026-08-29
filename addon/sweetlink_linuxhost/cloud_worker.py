@@ -7,6 +7,7 @@ import requests
 import socketio
 
 from .backend import Backend
+from .haadmin import HaAdmin
 import urllib3
 
 # Disabilita gli InsecureRequestWarning quando chiamiamo HTTPS interni (se usati)
@@ -716,6 +717,28 @@ class CloudWorker:
                 # e' un utente, la creazione fallisce piu' avanti con un messaggio che non dice
                 # perche'. Meglio dirlo qui.
                 raise Exception(f"Nessun utente di Home Assistant corrisponde a {auth_id!r} o al nome di accesso {username!r}.")
+
+            # LA PASSWORD DI UN AMMINISTRATORE NON SI CAMBIA DA QUI, E QUESTO E' IL CONFINE.
+            #
+            # Questo gestore cancella e ricrea le credenziali di un utente qualsiasi: e' cio' che
+            # gli serve per fare il suo lavoro, ed e' anche cio' che lo renderebbe la scorciatoia
+            # piu' comoda per impadronirsi dell'hub. Finche' l'identificativo arrivava solo da un
+            # gettone d'invito scritto da noi il pericolo era teorico; con una rotta che rigenera
+            # la password di un utente scelto dal portale non lo e' piu'.
+            #
+            # Gli account che creiamo noi stanno in "system-users" (riga 438 di questo file), mai
+            # fra gli amministratori. Quello dell'installatore, che ha in mano tutto l'impianto,
+            # e' amministratore. Il confine passa esattamente li'.
+            #
+            # "is not False" e non "is True": IsAdminInUserList risponde None quando non lo sa —
+            # elenco malformato, utente che li' dentro non c'e' — e davanti a un'azione che
+            # cambia una credenziale, non sapere vale no.
+            amministratore = HaAdmin.IsAdminInUserList(utenti, resolved_user_id)
+            if amministratore is not False:
+                motivo = "e' un amministratore" if amministratore else "non e' verificabile"
+                raise Exception(
+                    f"La password di questo account non si cambia da qui: {motivo}. "
+                    "Gli account amministratore si gestiscono dal profilo di Home Assistant.")
 
             # Dal momento che `admin_change_password` fallisce sempre con "Unauthorized" se il token dell'addon
             # non ha privilegi 'Owner' (gli Addon solitamente hanno solo 'Admin'), noi AGGIRIAMO il problema

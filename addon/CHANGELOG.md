@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.74
+
+- 🔒 La password di un account amministratore non si cambia piu' dal portale. Gli account che creiamo noi stanno fra gli utenti normali; quello dell'installatore no, e adesso c'e' un confine che lo separa.
+
 ## 2.7.73
 
 - 📐 Via il contorno rosso attorno all'azzeramento, e il campo di conferma prende la stessa larghezza del pulsante.
