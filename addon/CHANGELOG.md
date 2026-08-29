@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.69
+
+- 🧭 La pagina dell'add-on è stata rifatta: in cima l'indirizzo dell'hub con accanto lo stato, sotto tre sezioni con il titolo e la spiegazione a sinistra e la cosa a destra. I dettagli tecnici non sono più dentro un pannello da aprire: sono i valori che si cercano quando qualcosa non va, e nasconderli li rendeva introvabili proprio allora.
+- 🛑 L'azzeramento è l'unica cosa che resta chiusa, in un riquadro rosso in fondo: è l'unica che distrugge qualcosa.
+
 ## 2.7.68
 
 - 📏 L'icona nella barra laterale diventa un righello, la stessa cosa che disegna il marchio Sweetplace.

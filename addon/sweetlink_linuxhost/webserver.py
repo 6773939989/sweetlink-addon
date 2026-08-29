@@ -508,87 +508,109 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # essere merce e diventa l'impianto di qualcuno.
             dominio = escape(claimUrl.split("/c/")[0].replace("https://", "")) if claimUrl else ""
 
+            # IL TITOLO E' L'INDIRIZZO DELL'APPARECCHIO, NON IL NOSTRO NOME.
+            # Chi apre questa pagina sa gia' di che prodotto si tratta; quello che non sa, e per
+            # cui e' venuto, e' QUALE hub sta guardando e se risponde. Finche' il tunnel non e'
+            # salito quell'indirizzo non lo conosciamo, e si dice quello invece di lasciare un
+            # titolo vuoto.
+            titoloPagina = escape(publicUrl.replace("https://", "")) if publicUrl else "Indirizzo non ancora assegnato"
+
             if codiceTesto is None:
                 # Prima dell'ottenimento del codice non si sa ancora in quale fase siamo.
                 sezionePrincipale = (
-                    '<div class="featureHolder"><div>'
-                    '<div class="featureHeader">Registrazione in corso</div>'
-                    '<div class="featureDetails">L\'hub si sta annunciando al backend. Il codice '
-                    'di rivendicazione compare qui appena la registrazione riesce.</div>'
-                    '</div></div>')
+                    '<section class="sezione"><div>'
+                    '<h2 class="sezioneTitolo">Registrazione in corso</h2>'
+                    '<p class="sezioneNota">L\'apparecchio si sta annunciando.</p>'
+                    '</div><div>'
+                    '<p class="sezioneNota">Il codice di rivendicazione compare qui appena la '
+                    'registrazione riesce. Se resta cosi\' per piu\' di qualche minuto, guarda '
+                    'lo stato qui sopra: senza rete non si registra.</p>'
+                    '</div></section>')
                 datiCodice = ""
 
             elif claimFatto:
                 # ── L'APPARECCHIO E' DI QUALCUNO ────────────────────────────────────────────
                 sezionePrincipale = (
-                    '<div class="featureHolder"><div>'
-                    '<div class="featureHeader">Il tuo impianto</div>'
-                    '<div class="fieldValue" style="margin-bottom:var(--ha-space-2);">'
-                    + publicUrlHtml + '</div>'
-                    '<div class="featureDetails">Da qui imposti la posizione della casa e '
-                    'gestisci chi puo\' accedere.</div>'
-                    '</div>'
-                    '<div class="featureButton" id="apriPortale">Apri la configurazione</div>'
-                    '</div>')
+                    '<section class="sezione"><div>'
+                    '<h2 class="sezioneTitolo">Le persone di casa</h2>'
+                    '<p class="sezioneNota">Chi puo\' entrare, con quale nome, e l\'indirizzo '
+                    'della casa. Si aprono nel portale, in una scheda nuova.</p>'
+                    '</div><div>'
+                    '<div class="featureButton" id="apriPortale" style="margin-top:0;">'
+                    'Apri la configurazione</div>'
+                    '</div></section>')
                 # Il codice resta consultabile, ma fra i dati tecnici: serve solo all'assistenza.
-                datiCodice = ('<div class="datiEtichetta">Codice</div>'
+                datiCodice = ('<div class="datiEtichettaRiga">Codice</div>'
                               '<div class="fieldValue">' + codiceTesto + '</div>')
 
             else:
                 # ── L'APPARECCHIO E' ANCORA MERCE ───────────────────────────────────────────
                 qrHtml = ('<div class="qrBox">' + qrSvg + '</div>') if qrSvg else ''
                 sezionePrincipale = (
-                    '<div class="featureHolder"><div>'
-                    '<div class="featureHeader">Da consegnare</div>'
-                    '<div class="featureDetails" style="margin-bottom:var(--ha-space-3);">'
-                    'Stampa QR e codice sull\'etichetta dell\'apparecchio.</div>'
-                    + '<div class="consegna">' + qrHtml +
+                    '<section class="sezione"><div>'
+                    '<h2 class="sezioneTitolo">Da consegnare</h2>'
+                    '<p class="sezioneNota">Stampa questi due sull\'etichetta sotto '
+                    'l\'apparecchio. Il cliente inquadra il QR, oppure digita il codice su '
+                    '<b>' + dominio + '</b>: senza, non puo\' rivendicarlo nessun altro.</p>'
+                    '</div><div>'
+                    '<div class="consegna">' + qrHtml +
                     '<div class="codiceGrande">' + codiceTesto + '</div></div>'
-                    '<div class="featureDetails" style="margin-top:var(--ha-space-3);">'
-                    'Il cliente inquadra il QR, oppure digita il codice su <b>' + dominio + '</b>. '
-                    'Senza, non puo\' rivendicare l\'hub nessun altro.</div>'
-                    '</div>'
                     '<div class="featureButton featureButtonQuieto" id="goToOnboarding">'
                     'Registra il tuo Sweetplace</div>'
-                    '</div>')
+                    '</div></section>')
                 datiCodice = ""
 
             # Gli strumenti di chi installa: l'indirizzo hardware, il codice dell'etichetta e
             # il pulsante che distrugge l'identita' dell'apparecchio. Chi li vede lo decide la
             # scelta piu' sotto, non questa variabile.
             sezioniDiServizio = """
-            <div class="featureHolder">
-                <details>
-                    <summary class="featureHeader">Dettagli tecnici</summary>
-                    <div class="datiGriglia">
-                        <div class="datiEtichetta">Indirizzo hardware</div>
-                        <div class="fieldValue">"""+escape(macText)+"""</div>
-                        <div class="datiEtichetta">Indirizzo pubblico</div>
-                        <div class="fieldValue">"""+publicUrlHtml+"""</div>
-                        """+datiCodice+"""
-                    </div>
-                </details>
-            </div>
+            <section class="sezione">
+                <div>
+                    <h2 class="sezioneTitolo">Dettagli tecnici</h2>
+                    <p class="sezioneNota">I tre valori che servono all'assistenza quando
+                    qualcosa non torna.</p>
+                </div>
+                <div class="dati">
+                    <div class="datiEtichettaRiga">Indirizzo hardware</div>
+                    <div class="fieldValue">"""+escape(macText)+"""</div>
+                    <div class="datiEtichettaRiga">Indirizzo pubblico</div>
+                    <div class="fieldValue">"""+publicUrlHtml+"""</div>
+                    """+datiCodice+"""
+                </div>
+            </section>
 
-            <div class="featureHolder grigliaIntera">
-                <details id="prepDetails">
-                    <summary class="featureHeader">Preparazione immagine</summary>
+            <section class="sezione">
+                <div>
+                    <h2 class="sezioneTitolo">Preparazione immagine</h2>
+                    <p class="sezioneNota">Da fare prima di clonare il disco su altri hub.
+                    Cancella l'identita' di questo apparecchio: non si annulla.</p>
+                </div>
+                <div>
                     <div class="prepSummary" style="color:"""+prepSummaryColor+""";">
                         """+prepSummaryText+"""
                     </div>
                     """+prepRows+"""
-                    <div class="prepDanger">
-                        Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto, poi ferma
-                        l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
-                    </div>
-                    <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
-                    <div class="featureButton redFeatureButton" id="prepButton">
-                        Azzera e prepara la clonazione
-                    </div>
-                    <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); white-space: pre-wrap; word-break: break-word;"></div>
-                </details>
-            </div>
-"""
+
+                    <!-- L'azzeramento sta dentro un pannello da aprire, e non e' un ripiego:
+                         e' l'unica cosa in questa pagina che distrugge qualcosa, e un campo
+                         di testo con accanto un pulsante rosso, sempre aperto, e' un invito.
+                         Il referto qui sopra invece resta visibile: e' quello che si viene a
+                         leggere, e nasconderlo renderebbe il pannello inutile. -->
+                    <details id="prepDetails" class="zonaPericolo">
+                        <summary class="featureHeader">Azzera questo apparecchio</summary>
+                        <div class="prepDanger">
+                            Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto,
+                            poi ferma l'add-on.
+                        </div>
+                        <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
+                        <div class="featureButton redFeatureButton" id="prepButton">
+                            Azzera e prepara la clonazione
+                        </div>
+                        <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); word-break: break-word;"></div>
+                    </details>
+                </div>
+            </section>
+            """
 
             # ── CHI VEDE COSA. TRE CASI, TRE PAGINE, DECISI QUI E SOLO QUI. ────────────────
             #
@@ -756,12 +778,98 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         grid-column: 1 / -1;
     }
 
+    /* L'INTESTAZIONE E' QUELLA DI UNA PAGINA DI CONTROLLO, NON DI UNA COPERTINA.
+       Marchio centrato e stato centrato sotto facevano una pagina di presentazione: la prima
+       cosa che si legge era il nostro nome, che chi apre questa pagina conosce gia'. Qui la
+       prima cosa e' QUALE apparecchio si sta guardando e se risponde, che e' l'unica domanda
+       con cui si arriva. E' la forma che hanno le pagine di un dispositivo in Tailscale e
+       Twingate: nome grande, stato accanto, tutto a filo di sinistra. */
     .brand {
-        text-align: center;
+        font-size: var(--ha-font-size-s);
+        color: var(--secondary-text-color);
+        margin-bottom: var(--ha-space-1);
+    }
+    .testata {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: var(--ha-space-3);
+        margin-bottom: var(--ha-space-6);
+    }
+    .titoloPagina {
+        margin: 0;
         font-size: var(--ha-font-size-xl);
         font-weight: var(--ha-font-weight-medium);
         line-height: var(--ha-line-height-condensed);
-        margin-bottom: var(--ha-space-4);
+        word-break: break-all;
+    }
+    /* La spia diventa una pastiglia accanto al nome: una riga di stato per conto suo, centrata,
+       si legge come un titolo e non come una proprieta' dell'apparecchio. */
+    .pastiglia {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--ha-space-2);
+        padding: var(--ha-space-1) var(--ha-space-3);
+        border-radius: var(--ha-border-radius-pill);
+        background-color: var(--secondary-background-color);
+        font-size: var(--ha-font-size-s);
+        font-weight: var(--ha-font-weight-medium);
+        white-space: nowrap;
+    }
+
+    /* Una sezione: a sinistra cosa e' e a cosa serve, a destra la cosa. Su schermo stretto le
+       due colonne diventano una, senza punti di rottura scritti a mano. */
+    .sezione {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
+        gap: var(--ha-space-4);
+        padding: var(--ha-space-5) 0;
+        border-top: 1px solid var(--divider-color);
+    }
+    @media (max-width: 720px) {
+        .sezione { grid-template-columns: 1fr; }
+    }
+    .sezioneTitolo {
+        margin: 0 0 var(--ha-space-2);
+        font-size: var(--ha-font-size-l);
+        font-weight: var(--ha-font-weight-medium);
+    }
+    .sezioneNota {
+        margin: 0;
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+        line-height: 1.5;
+    }
+    /* L'elenco dei dati: etichetta a sinistra, valore a destra, una riga per volta. Sempre
+       visibile, non dentro un pannello da aprire: sono i tre valori che si cercano quando
+       qualcosa non va, e nasconderli dietro un clic li rende introvabili proprio allora. */
+    .dati {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: var(--ha-space-2) var(--ha-space-4);
+        align-items: baseline;
+    }
+    .datiEtichettaRiga {
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+    }
+    /* La zona da cui si torna indietro solo con un cacciavite. */
+    /* Dentro una sezione il pulsante si dimensiona sul proprio testo: a tutta larghezza, con
+       la colonna di sinistra che spiega, sembrava un banner e non un comando. */
+    .sezione .featureButton {
+        display: inline-block;
+        margin-top: 0;
+    }
+    .sezione .zonaPericolo .featureButton {
+        display: block;
+        margin-top: var(--ha-space-3);
+    }
+
+    .zonaPericolo {
+        border: 1px solid var(--error-color);
+        border-radius: var(--ha-border-radius-lg);
+        padding: var(--ha-space-4);
+        margin-top: var(--ha-space-5);
     }
     .whiteLink {
         color: var(--primary-text-color);
@@ -1060,18 +1168,17 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 <div class="pageWrap">
     <div class="panel">
         <div class="brand">
-            <!-- this must target open blank or it won't open properly! -->
             <a href="https://sweetplace.me" target="_blank" class="whiteLink">Sweetplace</a>
         </div>
-
-        <div class="statusRow" style="color:"""+statusColor+""";">
-            <div class="statusDot" style="background-color:"""+statusColor+""";"></div>
-            <div>"""+statusText+"""</div>
+        <div class="testata">
+            <h1 class="titoloPagina">"""+titoloPagina+"""</h1>
+            <span class="pastiglia" style="color:"""+statusColor+""";">
+                <span class="statusDot" style="background-color:"""+statusColor+""";"></span>
+                """+statusText+"""
+            </span>
         </div>
 
-        <div class="griglia">
-            """+corpoPagina+"""
-        </div>
+        """+corpoPagina+"""
     </div>
 </div>
 <script>
