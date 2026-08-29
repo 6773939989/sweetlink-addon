@@ -3,6 +3,7 @@ import time
 import logging
 import threading
 import traceback
+import requests
 from typing import Any, Dict, List, Optional, Set
 
 from sweetlink.mdns import MDns
@@ -108,6 +109,40 @@ class LinuxHost(IStateChangeHandler):
     # None quando non e' determinabile: chi chiama deve trattarlo come un no.
     def IsHaUserAdmin(self, userId:str) -> Optional[bool]:
         return HaAdmin.IsUserAdmin(self.Logger, self.HaConnection, userId)
+
+
+    # L'indirizzo con cui aprire il portale gia' dentro, oppure None se non e' ottenibile.
+    #
+    # Sta qui e non nel server web perche' qui ci sono i segreti: il backend riconosce l'hub dalla
+    # coppia plugin_id + private_key, la stessa con cui l'add-on apre la propria socket. Il server
+    # web la chiave non ce l'ha e non deve averla.
+    #
+    # Nessun ripiego silenzioso: se la richiesta non riesce si restituisce None e chi ha premuto
+    # il pulsante vede un errore. Aprire comunque la radice del portale lo rimanderebbe al primo
+    # passo della rivendicazione, cioe' esattamente il difetto che questa strada esiste per
+    # togliere, e sembrerebbe un difetto invece di un guasto momentaneo.
+    def ChiediLinkPannello(self) -> Optional[str]:
+        try:
+            pluginId = self.GetPluginId()
+            privateKey = self.GetPrivateKey()
+            if pluginId is None or privateKey is None:
+                self.Logger.warning("Ingresso dal pannello: identita' non disponibile.")
+                return None
+            risposta = requests.post(Backend.BaseUrl() + "/device/panel-link",
+                                     json={"plugin_id": pluginId, "private_key": privateKey},
+                                     timeout=10)
+            if risposta.status_code != 200:
+                self.Logger.warning(f"Ingresso dal pannello: il backend ha risposto {risposta.status_code}.")
+                return None
+            url = risposta.json().get("url")
+            # Il valore arriva dalla rete: si controlla qui, non dove viene aperto.
+            if isinstance(url, str) and url.startswith("https://"):
+                return url
+            self.Logger.warning(f"Ingresso dal pannello: indirizzo inatteso dal backend: {url!r}")
+            return None
+        except Exception as e:
+            self.Logger.warning(f"Ingresso dal pannello fallito: {e}")
+            return None
 
 
     # Il referto che il pannello mostra prima di clonare: cosa c'e' ancora sul disco che non
@@ -357,7 +392,8 @@ class LinuxHost(IStateChangeHandler):
             onboardApiUrl = Backend.DevicePingUrl()
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
             self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac,
-                                       self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin)
+                                       self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin,
+                                       self.ChiediLinkPannello)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.

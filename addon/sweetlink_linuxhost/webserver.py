@@ -50,10 +50,14 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 
     def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str],
                  reportProvider:Callable[[], List[Dict[str, str]]], wipeAction:Callable[[], List[Dict[str, str]]],
-                 adminCheck:Callable[[str], Optional[bool]]) -> None:
+                 adminCheck:Callable[[str], Optional[bool]],
+                 panelLinkProvider:Callable[[], Optional[str]]) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
+        # Chiede al backend un indirizzo con cui aprire il portale gia' dentro. Sta fuori di qui
+        # perche' richiede la chiave privata, che questo server non ha e non deve avere.
+        self.PanelLinkProvider = panelLinkProvider
         self.Config = config
         # Il referto sulla preparazione dell'immagine e l'azzeramento vero e proprio. Stanno qui
         # e non nel tab di configurazione perche' chi prepara l'immagine deve vedere cosa c'e'
@@ -269,6 +273,32 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # regge anche se un giorno il Supervisor cambia come inoltra. La query si scarta,
             # altrimenti un "?x=1" in coda trasformerebbe la rotta in un 404.
             route = self.path.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+
+            # L'INGRESSO NEL PORTALE, PER CHI E' GIA' AMMINISTRATORE QUI.
+            #
+            # Il pulsante apriva la radice del portale, e il browser del telefono non ha nessuna
+            # sessione: la procedura ripartiva dal primo passo anche su un hub gia' registrato.
+            # Passare il MAC non risolve, perche' rispondere "questo hub e' di mario@..." a
+            # chiunque conosca un indirizzo hardware sarebbe una fuga.
+            #
+            # Qui a chiederlo e' l'hub, che si autentica col proprio segreto, e lo fa solo dopo
+            # aver verificato che chi ha premuto sia amministratore su questo sistema. Chi lo e'
+            # ha gia' piu' potere di quanto il portale gliene dia: non gli si sta concedendo
+            # niente di nuovo, gli si sta risparmiando un giro di email.
+            if route.endswith("/panel-link"):
+                if not WebServer.Instance.RunDevWebServer:
+                    userId = self.headers.get(HaAdmin.c_UserIdHeader, "")
+                    if WebServer.Instance.AdminCheck(userId) is not True:
+                        WebServer.Instance.Logger.warning(f"Ingresso nel portale rifiutato: [{userId}] non risulta amministratore.")
+                        self._sendJson(403, {"error": "solo un amministratore puo' aprire la configurazione da qui"})
+                        return
+                url = WebServer.Instance.PanelLinkProvider()
+                if not url:
+                    self._sendJson(502, {"error": "non riesco a parlare con Sweetplace. Riprova fra un minuto."})
+                    return
+                self._sendJson(200, {"url": url})
+                return
+
             if not route.endswith("/factory-reset"):
                 self._sendJson(404, {"error": "rotta sconosciuta"})
                 return
@@ -462,7 +492,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     '<div class="featureDetails">Da qui imposti la posizione della casa e '
                     'gestisci chi puo\' accedere.</div>'
                     '</div>'
-                    '<div class="featureButton" id="goToOnboarding">Apri la configurazione</div>'
+                    '<div class="featureButton" id="apriPortale">Apri la configurazione</div>'
                     '</div>')
                 # Il codice resta consultabile, ma fra i dati tecnici: serve solo all'assistenza.
                 datiCodice = ('<div class="datiEtichetta">Codice</div>'
@@ -483,7 +513,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     'Senza, non puo\' rivendicare l\'hub nessun altro.</div>'
                     '</div>'
                     '<div class="featureButton featureButtonQuieto" id="goToOnboarding">'
-                    'Rivendicalo da qui</div>'
+                    'Registra il tuo Sweetplace</div>'
                     '</div>')
                 datiCodice = ""
 
@@ -936,6 +966,43 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 <script>
     // Wait for the document to be ready.
     (function() {
+        // L'HUB GIA' REGISTRATO NON RIPARTE DALLA RIVENDICAZIONE.
+        //
+        // Si chiede all'add-on un indirizzo che apre il portale gia' dentro. E' una richiesta di
+        // rete, quindi il pulsante lo dice mentre aspetta: aprire una scheda vuota e poi
+        // riempirla sembra un blocco.
+        const apriPortale = document.getElementById("apriPortale");
+        if(apriPortale)
+        {
+            apriPortale.onclick = () => {
+                if(apriPortale.dataset.inCorso === "1") return;
+                apriPortale.dataset.inCorso = "1";
+                const testo = apriPortale.textContent;
+                apriPortale.textContent = "Apro\u2026";
+                // Percorso relativo alla pagina, come per l'azzeramento: sotto l'Ingress la
+                // base cambia a ogni sessione e un percorso assoluto non esiste.
+                const base = window.location.pathname.endsWith("/") ? window.location.pathname : window.location.pathname + "/";
+                fetch(base + "panel-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+                    .then((r) => r.text().then((t) => ({ stato: r.status, testo: t })))
+                    .then((risposta) => {
+                        let d = null;
+                        try { d = JSON.parse(risposta.testo); } catch (e) { d = null; }
+                        apriPortale.dataset.inCorso = "";
+                        apriPortale.textContent = testo;
+                        if(d && d.url) { window.open(d.url, "_blank").focus(); return; }
+                        // Non si apre comunque la radice del portale: rimanderebbe al primo
+                        // passo della rivendicazione, che e' esattamente cio' che questa strada
+                        // esiste per evitare, e sembrerebbe un difetto invece di un guasto.
+                        alert((d && d.error) || "Non riesco ad aprire la configurazione adesso. Riprova fra un minuto.");
+                    })
+                    .catch((e) => {
+                        apriPortale.dataset.inCorso = "";
+                        apriPortale.textContent = testo;
+                        alert("Non riesco ad aprire la configurazione (" + e + ").");
+                    });
+            };
+        }
+
         const onboardingButton = document.getElementById("goToOnboarding");
         if(onboardingButton)
         {

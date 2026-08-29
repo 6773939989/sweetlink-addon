@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.65
+
+- 🚪 «Apri la configurazione» su un hub già registrato non fa più ripartire la registrazione da zero: apre il portale già dentro, alla gestione di casa. Il pulsante lo mostra solo a chi è amministratore su questo sistema.
+- 🏷️ Su un hub non ancora registrato il pulsante dice «Registra il tuo Sweetplace», invece di «Rivendicalo da qui».
+
 ## 2.7.64
 
 - 🔑 La password non veniva impostata quando il nome di accesso era diverso dal nome visualizzato: «Tiberio» con accesso «oneshot» falliva con «utente non trovato». L'invito conservava l'identificativo della persona invece di quello dell'utente, e il ripiego cercava di rimediare confrontando i due nomi — cosa che funzionava solo finché coincidevano.
