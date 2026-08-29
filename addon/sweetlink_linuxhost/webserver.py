@@ -553,18 +553,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     '</div>')
                 datiCodice = ""
 
-            # LE DUE SCHEDE DI SERVIZIO LE VEDE SOLO CHI DEVE.
-            #
-            # Dettagli tecnici e Preparazione immagine sono strumenti di chi installa: dentro
-            # ci sono l'indirizzo hardware, il codice dell'etichetta e il pulsante che
-            # distrugge l'identita' dell'apparecchio. Il proprietario di casa non ha niente
-            # da farci, e gli altri membri nemmeno.
-            #
-            # Non e' l'unica difesa e non pretende di esserlo: la rotta che azzera controlla
-            # da se' chi la chiama, perche' Home Assistant lascia raggiungibile la rotta
-            # ingress a chiunque abbia un account qui. Questo decide cosa si vede, non cosa
-            # si puo' fare.
-            sezioniRiservate = """
+            # Gli strumenti di chi installa: l'indirizzo hardware, il codice dell'etichetta e
+            # il pulsante che distrugge l'identita' dell'apparecchio. Chi li vede lo decide la
+            # scelta piu' sotto, non questa variabile.
+            sezioniDiServizio = """
             <div class="featureHolder">
                 <details>
                     <summary class="featureHeader">Dettagli tecnici</summary>
@@ -596,12 +588,33 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); white-space: pre-wrap; word-break: break-word;"></div>
                 </details>
             </div>
-""" if sonoAmministratore else ""
+"""
 
-            # Chi non e' ne' amministratore ne' proprietario non ha niente da fare qui, e
-            # dirglielo e' meglio che mostrargli una pagina che non lo riguarda.
-            if not sonoAmministratore and not sonoProprietario:
-                sezionePrincipale = (
+            # ── CHI VEDE COSA. TRE CASI, TRE PAGINE, DECISI QUI E SOLO QUI. ────────────────
+            #
+            # Prima la scelta era sparsa: una condizione sulla variabile delle schede, una
+            # riscrittura della sezione principale piu' sotto. Due punti che decidevano la
+            # stessa cosa sono due punti da tenere d'accordo, e il giorno che se ne aggiunge un
+            # terzo nessuno se ne accorge finche' qualcuno non vede quello che non deve.
+            #
+            # Questo decide cosa si VEDE. Cosa si puo' FARE lo decidono le rotte, ognuna per
+            # conto proprio: azzerare vuole un amministratore, aprire il portale vuole un
+            # amministratore o il proprietario. Home Assistant lascia raggiungibile la rotta
+            # ingress a chiunque abbia un account su questo hub, quindi una pagina che non
+            # mostra un pulsante non e' una porta chiusa: e' solo una porta non indicata.
+            if sonoAmministratore:
+                # Chi installa: tutto, comprese le due schede di servizio.
+                corpoPagina = sezionePrincipale + sezioniDiServizio
+            elif sonoProprietario:
+                # Chi ha registrato la casa: il proprio impianto e da li' la gestione delle
+                # persone. Niente strumenti di fabbrica: non deve poter azzerare l'apparecchio
+                # ne' leggere il codice che serviva a consegnarlo.
+                corpoPagina = sezionePrincipale
+            else:
+                # Chiunque altro abiti in questa casa. La voce nella barra laterale la vede
+                # comunque, perche' Home Assistant sa distinguere solo fra amministratori e
+                # tutti gli altri: se compare, tanto vale che dica perche' non serve a lui.
+                corpoPagina = (
                     '<div class="featureHolder"><div>'
                     '<div class="featureHeader">Niente da fare qui</div>'
                     '<div class="featureDetails">Questa pagina serve a chi ha registrato la casa. '
@@ -1046,8 +1059,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         </div>
 
         <div class="griglia">
-            """+sezionePrincipale+"""
-            """+sezioniRiservate+"""
+            """+corpoPagina+"""
         </div>
     </div>
 </div>

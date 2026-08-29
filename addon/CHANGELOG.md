@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.67
+
+- 🧭 Tre pagine distinte a seconda di chi apre il pannello: chi installa vede tutto, chi ha registrato la casa vede il proprio impianto e la gestione delle persone, chiunque altro una riga che dice che lì non c'è niente per lui. La scelta sta in un punto solo del codice invece che sparsa in due.
+
 ## 2.7.66
 
 - 🏠 Chi ha registrato la casa trova la voce Sweetplace nella propria barra laterale, e da lì apre la gestione delle persone. Prima la vedevano solo gli amministratori, e il proprietario è un utente standard: non aveva nessun posto da cui farlo.
