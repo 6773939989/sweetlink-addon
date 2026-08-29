@@ -932,10 +932,9 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         margin-top: var(--ha-space-3);
     }
 
+    /* Nessun contorno rosso: il pulsante e' gia' rosso, il testo dice cosa succede, e la
+       cornice non aggiungeva niente se non un riquadro dentro un altro riquadro. */
     .zonaPericolo {
-        border: 1px solid var(--error-color);
-        border-radius: var(--ha-border-radius-lg);
-        padding: var(--ha-space-4);
         margin-top: var(--ha-space-5);
     }
     .whiteLink {
@@ -1178,7 +1177,15 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         color: var(--secondary-text-color);
     }
     .prepInput {
-        width: 100%;
+        /* Larga quanto il pulsante che le sta sotto: sono i due passaggi della stessa azione —
+           si scrive la parola, si preme — e due larghezze diverse li facevano sembrare due cose.
+           La misura e' la stessa costante dei pulsanti. */
+        width: 17rem;
+        max-width: 100%;
+        /* In colonna, non accanto al pulsante: prima il campo occupava tutta la riga e il
+           pulsante andava a capo per forza. Adesso che sono larghi uguali ci starebbero
+           affiancati, e la parola di conferma finirebbe accanto al comando che arma. */
+        display: block;
         box-sizing: border-box;
         margin-top: var(--ha-space-3);
         padding: var(--ha-space-3);

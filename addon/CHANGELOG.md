@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.73
+
+- 📐 Via il contorno rosso attorno all'azzeramento, e il campo di conferma prende la stessa larghezza del pulsante.
+
 ## 2.7.72
 
 - ✍️ «Non si annulla» diventa «l'operazione non è reversibile: non si torna indietro», e il riquadro rosso dice cosa succede davvero: l'apparecchio torna come appena uscito di fabbrica e chi lo aveva rivendicato deve rifare la registrazione.
