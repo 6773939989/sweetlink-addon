@@ -51,13 +51,17 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     def __init__(self, logger:logging.Logger, pluginId:str, config:Config, devConfig:Optional[Dict[str,Any]], onboardBaseUrl:str, macProvider:Callable[[], str],
                  reportProvider:Callable[[], List[Dict[str, str]]], wipeAction:Callable[[], List[Dict[str, str]]],
                  adminCheck:Callable[[str], Optional[bool]],
-                 panelLinkProvider:Callable[[], Optional[str]]) -> None:
+                 panelLinkProvider:Callable[[], Optional[str]],
+                 membersProvider:Callable[[], Optional[List[Dict[str, str]]]]) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
         # Chiede al backend un indirizzo con cui aprire il portale gia' dentro. Sta fuori di qui
         # perche' richiede la chiave privata, che questo server non ha e non deve avere.
         self.PanelLinkProvider = panelLinkProvider
+        # Le persone di casa. Il server web non sa comporle: le chiede a chi ha in mano la
+        # connessione a Home Assistant e lo schedario dei nomi di accesso.
+        self.MembersProvider = membersProvider
         # Vuoto finche' il backend non lo comunica: prima della rivendicazione non esiste nessun
         # proprietario, e trattare "non lo so ancora" come "sei tu" aprirebbe il pannello al
         # primo che passa.
@@ -530,13 +534,38 @@ class WebServer(IAccountLinkStatusUpdateHandler):
 
             elif claimFatto:
                 # ── L'APPARECCHIO E' DI QUALCUNO ────────────────────────────────────────────
+                # L'ELENCO STA QUI, NON SOLO DIETRO IL PULSANTE.
+                #
+                # Questa pagina mostra gia' l'indirizzo hardware, quello pubblico e il codice:
+                # la cosa che a chi guarda interessa di piu', cioe' chi puo' entrare in questa casa,
+                # era l'unica dietro un clic e un'altra scheda. Il pulsante resta, e sta in fondo
+                # all'elenco: prima si guarda chi c'e', poi si aggiunge.
+                #
+                # None vuol dire "non ho potuto chiedere", che non e' "non c'e' nessuno": la
+                # differenza si dice, altrimenti un hub scollegato sembra una casa vuota.
+                membri = WebServer.Instance.MembersProvider()
+                if membri is None:
+                    elenco = ('<p class="sezioneNota">Non riesco a leggere l\'elenco adesso. '
+                              'Guarda lo stato qui sopra.</p>')
+                elif len(membri) == 0:
+                    elenco = ('<p class="sezioneNota">Ancora nessuno oltre a chi ha registrato '
+                              'la casa.</p>')
+                else:
+                    elenco = ""
+                    for m in membri:
+                        accesso = escape(str(m.get("accesso") or ""))
+                        elenco += ('<div class="membro"><div>' + escape(str(m.get("nome") or "")) + '</div>'
+                                   + ('<div class="membroAccesso">' + accesso + '</div>' if accesso else '')
+                                   + '</div>')
+
                 sezionePrincipale = (
                     '<section class="sezione"><div>'
                     '<h2 class="sezioneTitolo">Le persone di casa</h2>'
-                    '<p class="sezioneNota">Chi puo\' entrare, con quale nome, e l\'indirizzo '
-                    'della casa. Si aprono nel portale, in una scheda nuova.</p>'
+                    '<p class="sezioneNota">Chi puo\' entrare, e con quale nome. Si aggiungono e '
+                    'si tolgono dal portale, che si apre in una scheda nuova.</p>'
                     '</div><div>'
-                    '<div class="featureButton" id="apriPortale" style="margin-top:0;">'
+                    + elenco +
+                    '<div class="featureButton" id="apriPortale" style="margin-top:var(--ha-space-4);">'
                     'Apri la configurazione</div>'
                     '</div></section>')
                 # Il codice resta consultabile, ma fra i dati tecnici: serve solo all'assistenza.
@@ -740,18 +769,22 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         -moz-osx-font-smoothing: grayscale;
     }
 
+    /* I MARGINI SONO UNA FRAZIONE DELLA LARGHEZZA, NON UN NUMERO DI PIXEL.
+       Su un telefono il 5% per lato: piu' stretto e il testo tocca il bordo, piu' largo e su uno
+       schermo da 360px si perde un terzo dello spazio utile.
+       Su schermo grande un sesto per lato, cioe' due terzi al contenuto: una misura fissa in
+       pixel lascerebbe il contenuto appiccicato a sinistra su un monitor largo e stretto su un
+       portatile. */
     .pageWrap {
-        display: flex;
-        justify-content: center;
-        padding: var(--ha-space-6) var(--ha-space-4);
+        padding: var(--ha-space-6) 5%;
+    }
+    @media (min-width: 721px) {
+        .pageWrap { padding: var(--ha-space-6) 16.6667%; }
     }
     .panel {
         width: 100%;
-        /* LARGO, NON UNA COLONNA DA TELEFONO IN MEZZO A UNO SCHERMO VUOTO.
-           Questa pagina la guarda chi installa, da un portatile, e le sue schede sono
-           indipendenti fra loro: incolonnarle a 480px voleva dire scorrere per vedere una cosa
-           che poteva stare accanto a un'altra. */
-        max-width: 1100px;
+        /* Nessun limite di larghezza: a decidere quanto e' largo il contenuto sono i margini
+           qui sopra, e due regole che decidono la stessa cosa finiscono per litigare. */
     }
 
     /* Le schede si dispongono da sole: affiancate se c'e' spazio, in colonna se non ce n'e'.
@@ -853,6 +886,25 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         color: var(--secondary-text-color);
         font-size: var(--ha-font-size-s);
     }
+    /* L'elenco delle persone: una riga per persona, il nome sopra e il nome di accesso sotto.
+       Nessuna scheda intorno a ognuna, perche' sono elementi di una lista e non oggetti
+       separati, e il filetto le divide come nelle tabelle di dispositivi di Tailscale e
+       Twingate. */
+    .membro {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: var(--ha-space-3);
+        padding: var(--ha-space-3) 0;
+        border-bottom: 1px solid var(--divider-color);
+    }
+    .membro:first-child { padding-top: 0; }
+    .membroAccesso {
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+        font-family: monospace;
+    }
+
     /* La zona da cui si torna indietro solo con un cacciavite. */
     /* Dentro una sezione il pulsante si dimensiona sul proprio testo: a tutta larghezza, con
        la colonna di sinistra che spiega, sembrava un banner e non un comando. */

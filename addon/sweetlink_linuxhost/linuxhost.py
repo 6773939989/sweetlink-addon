@@ -111,6 +111,19 @@ class LinuxHost(IStateChangeHandler):
         return HaAdmin.IsUserAdmin(self.Logger, self.HaConnection, userId)
 
 
+    # Le persone di casa, o None se non si e' potuto chiedere.
+    #
+    # Passa dal worker perche' li' c'e' la connessione a Home Assistant e lo schedario dei nomi di
+    # accesso. Il server web non ha ne' l'una ne' l'altro, e non deve averli: disegna e basta.
+    def ElencoMembri(self):
+        try:
+            from .cloud_worker import CloudWorkerInstance
+            return CloudWorkerInstance.ElencoMembri()
+        except Exception as e:
+            self.Logger.warning(f"Elenco dei membri non disponibile: {e}")
+            return None
+
+
     # L'indirizzo con cui aprire il portale gia' dentro, oppure None se non e' ottenibile.
     #
     # Sta qui e non nel server web perche' qui ci sono i segreti: il backend riconosce l'hub dalla
@@ -393,7 +406,7 @@ class LinuxHost(IStateChangeHandler):
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
             self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac,
                                        self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin,
-                                       self.ChiediLinkPannello)
+                                       self.ChiediLinkPannello, self.ElencoMembri)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.

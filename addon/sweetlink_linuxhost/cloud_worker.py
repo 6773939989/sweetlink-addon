@@ -291,6 +291,51 @@ class CloudWorker:
                 'requestId': request_id, 'success': False, 'riavvio': False, 'error': str(e)})
 
 
+    # L'elenco delle persone di casa, per chi lo chiede in locale.
+    #
+    # Lo stesso lavoro che _on_fetch_users fa per il cloud, separato dall'invio: il pannello
+    # dell'add-on lo mostra senza passare da internet, e un elenco che si costruisce in due punti
+    # diversi e' un elenco che prima o poi mostra due cose diverse.
+    #
+    # Restituisce una lista, vuota se non si e' potuto chiedere: chi disegna deve poter
+    # distinguere "nessuno in casa" da "non lo so", e per quello guarda il valore di ritorno di
+    # ElencoMembri, che e' None quando la domanda non e' stata posta.
+    def ElencoMembri(self):
+        try:
+            if not self.ha_connection or not getattr(self.ha_connection, 'IsConnected', False):
+                return None
+            risposta = self.ha_connection.SendAndReceiveMsg({"type": "get_states"}, timeout=5.0)
+            if not risposta or not risposta.get('success', False):
+                return None
+            stati = risposta.get('result', [])
+            if isinstance(stati, dict):
+                stati = list(stati.values())
+            elif not isinstance(stati, list):
+                return None
+
+            seguiti = [CloudWorker._tracked_id(e) for e in self._get_tracked_users()]
+            nomi = self._tracked_usernames()
+            membri = []
+            for stato in stati:
+                if not isinstance(stato, dict):
+                    continue
+                entita = str(stato.get('entity_id', ''))
+                if not entita.startswith('person.'):
+                    continue
+                attr = stato.get('attributes', {})
+                persona = attr.get('id') or attr.get('user_id') or entita
+                if persona not in seguiti:
+                    continue
+                membri.append({
+                    "nome": attr.get('friendly_name', entita),
+                    "accesso": nomi.get(persona, ''),
+                })
+            return membri
+        except Exception as e:
+            self.logger.warning(f"[CloudWorker] Elenco dei membri non disponibile: {e}")
+            return None
+
+
     def _on_fetch_users(self, data):
         request_id = data.get('requestId')
         self.logger.info(f"[CloudWorker] Requested HA Users by Cloud. Request ID: {request_id}")
