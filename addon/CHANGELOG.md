@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.71
+
+- 📐 I due pulsanti della pagina hanno la stessa larghezza. Finché quello che azzera l'apparecchio era più grande di quello che apre la configurazione, il più pericoloso era anche il primo che l'occhio raggiungeva.
+
 ## 2.7.70
 
 - 👥 La prima sezione elenca le persone di casa, con il nome e il nome di accesso, e il pulsante per gestirle sta in fondo all'elenco: prima si guarda chi c'è, poi si aggiunge. Era l'unica informazione della pagina che stava dietro un clic e un'altra scheda.

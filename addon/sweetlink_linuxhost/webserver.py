@@ -906,14 +906,23 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     }
 
     /* La zona da cui si torna indietro solo con un cacciavite. */
-    /* Dentro una sezione il pulsante si dimensiona sul proprio testo: a tutta larghezza, con
-       la colonna di sinistra che spiega, sembrava un banner e non un comando. */
+    /* I DUE PULSANTI HANNO LA STESSA LARGHEZZA, E NON E' UN VEZZO.
+       Uno apre la configurazione, l'altro distrugge l'apparecchio: sono i due comandi della
+       pagina, e finche' uno era largo quanto il suo testo e l'altro quanto la colonna, il piu'
+       pericoloso era anche il piu' grande — cioe' quello che l'occhio raggiunge per primo.
+       La misura viene dal testo piu' lungo: "Azzera e prepara la clonazione" occupa 206px, che
+       con il riempimento fanno 246. Diciassette rem sono 272: entrambi ci stanno su una riga, e
+       ne restano abbastanza perche' una traduzione piu' lunga non vada a capo.
+       E' un minimo e non una larghezza fissa: se un giorno un testo cresce oltre, il pulsante si
+       allarga invece di tagliarlo. */
     .sezione .featureButton {
         display: inline-block;
+        min-width: 17rem;
+        max-width: 100%;
+        box-sizing: border-box;
         margin-top: 0;
     }
     .sezione .zonaPericolo .featureButton {
-        display: block;
         margin-top: var(--ha-space-3);
     }
 
