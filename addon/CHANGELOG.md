@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.78
+
+- 📐 Le due colonne del pannello sono più distanti e partono dalla stessa riga di testo, non più per coincidenza dei corpi del tema.
+- 📐 L'elenco delle persone ha le intestazioni «Nome reale» e «Account», e il nome di accesso sta accanto al nome invece che dall'altra parte della pagina.
+
 ## 2.7.77
 
 - 🔒 Riprendersi la propria riga dopo aver rigenerato l'identità richiede ora anche la chiave precedente, non il solo identificativo: quello non è un segreto, e bastava per farsi consegnare il tunnel di una casa altrui.

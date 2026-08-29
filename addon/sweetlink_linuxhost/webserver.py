@@ -551,7 +551,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     elenco = ('<p class="sezioneNota">Ancora nessuno oltre a chi ha registrato '
                               'la casa.</p>')
                 else:
-                    elenco = ""
+                    # L'intestazione si disegna solo quando c'e' un elenco sotto: due nomi di
+                    # colonna sopra il nulla sono una tabella vuota, non una spiegazione.
+                    elenco = ('<div class="membriIntestazione">'
+                              '<div>Nome reale</div><div>Account</div></div>')
                     for m in membri:
                         accesso = escape(str(m.get("accesso") or ""))
                         elenco += ('<div class="membro"><div>' + escape(str(m.get("nome") or "")) + '</div>'
@@ -858,7 +861,22 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     .sezione {
         display: grid;
         grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
-        gap: var(--ha-space-4);
+        /* DUE SPAZI DIVERSI, PERCHE' SEPARANO DUE COSE DIVERSE.
+           In orizzontale dividono la spiegazione dal contenuto: 16px li lasciavano cosi' vicini
+           che la riga di sinistra sembrava la prima colonna di una tabella. In verticale — su
+           uno schermo stretto, dove le due colonne diventano una — dividono un blocco dal
+           successivo, e li' 16px bastano perche' c'e' gia' il cambio di corpo a separarli. */
+        column-gap: 32px;
+        row-gap: var(--ha-space-4);
+        /* LE DUE COLONNE PARTONO DALLA STESSA RIGA DI TESTO, NON DALLO STESSO PIXEL.
+           Allineate in cima ai riquadri, il titolo di sinistra (16px) e la prima riga di destra
+           (12 o 14px) cadono a altezze diverse: la riga piu' piccola galleggia dentro la propria
+           riga di testo, e le due partenze si scostano. Erano vicine per caso, ed era un caso
+           che dipende dai corpi che il tema di Home Assistant assegna a quelle variabili: basta
+           un tema con proporzioni diverse e si vede.
+           baseline allinea la PRIMA LINEA DI BASE dei due riquadri, che e' esattamente quello
+           che l'occhio legge come "partono insieme", e lo fa qualunque corpo abbiano. */
+        align-items: baseline;
         /* Piu' aria sotto che sopra: il filetto separa due sezioni, e con lo stesso spazio da
            una parte e dall'altra non si capisce a quale delle due appartenga cio' che gli sta
            vicino. Il contenuto respira dopo l'ultima riga, non prima della successiva. */
@@ -897,14 +915,36 @@ class WebServer(IAccountLinkStatusUpdateHandler):
        separati, e il filetto le divide come nelle tabelle di dispositivi di Tailscale e
        Twingate. */
     .membro {
-        display: flex;
+        display: grid;
+        /* IL NOME DI ACCESSO STA ACCANTO AL NOME, NON DALL'ALTRA PARTE DELLA PAGINA.
+           Con space-between i due finivano ai due estremi della colonna: su uno schermo largo si
+           misuravano 579px di vuoto in mezzo, e per leggere con che nome entra una persona
+           bisognava attraversarli. Sono due dati della stessa riga, non due colonne di una
+           tabella larga quanto lo schermo.
+           La prima colonna ha un tetto: fin dove serve al nome piu' lungo, poi il nome di accesso
+           comincia. Cio' che avanza resta vuoto a destra, che e' il posto giusto per il vuoto. */
+        grid-template-columns: minmax(0, 18rem) max-content;
         align-items: baseline;
-        justify-content: space-between;
         gap: var(--ha-space-3);
         padding: var(--ha-space-3) 0;
         border-bottom: 1px solid var(--divider-color);
     }
     .membro:first-child { padding-top: 0; }
+    /* L'intestazione dice cosa sono le due colonne. Senza, "pipoo" accanto a "Mariotti Pippo"
+       poteva essere un soprannome, un ruolo o un identificativo: e' il nome con cui quella
+       persona entra in casa, e va detto. */
+    .membriIntestazione {
+        display: grid;
+        grid-template-columns: minmax(0, 18rem) max-content;
+        gap: var(--ha-space-3);
+        padding-bottom: var(--ha-space-2);
+        border-bottom: 1px solid var(--divider-color);
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+        font-weight: var(--ha-font-weight-medium);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
     .membroAccesso {
         color: var(--secondary-text-color);
         font-size: var(--ha-font-size-s);
