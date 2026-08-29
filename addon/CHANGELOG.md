@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.76
+
+- 🔒 Per ottenere il tunnel l'apparecchio deve presentare la propria chiave privata. Prima bastava un identificativo, e chi otteneva quel gettone poteva diventare l'altro capo dell'indirizzo pubblico della casa.
+- 🔒 `cloudflared` non si scarica più da «l'ultima versione»: versione fissa e impronta verificata prima di renderlo eseguibile.
+
 ## 2.7.75
 
 - 🐛 L'elenco delle persone di casa riportava, come identificativo dell'utente, quello della persona: la rigenerazione della password moriva con «nessun utente corrisponde». Adesso l'add-on ricorda il legame da quando crea l'account, e qualunque identificativo esca viene verificato contro l'anagrafica di Home Assistant.

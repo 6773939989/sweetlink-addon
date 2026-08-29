@@ -26,22 +26,50 @@ RUN pip install --no-cache-dir -q "zstandard>=0.21.0,<0.23.0"
 # Install curl to download cloudflared
 RUN apk add --no-cache curl
 
-# Map BUILD_ARCH to cloudflared binary architecture
+# ── cloudflared: VERSIONE FISSA E IMPRONTA VERIFICATA ─────────────────────────────────
+#
+# COSA C'ERA PRIMA. Il binario si scaricava da .../releases/latest/... e si rendeva eseguibile
+# senza guardarlo. Due cose diverse, tutte e due gravi.
+#
+# La prima: "latest" cambia da solo. Due immagini costruite a distanza di una settimana
+# contengono binari diversi, e nessuno lo sa. Se una versione di cloudflared rompe qualcosa, non
+# c'e' niente a cui tornare indietro perche' non c'e' scritto da nessuna parte cosa c'era prima.
+#
+# La seconda, che e' la ragione per cui la voce stava fra le due gravi del documento di sicurezza:
+# quel binario gira da root dentro un container che ha la rete dell'host, il ruolo manager sul
+# Supervisor e la scrittura sulla configurazione di Home Assistant. Qualunque cosa arrivasse da
+# quell'indirizzo veniva eseguita su ogni hub della flotta. Non serve immaginare un attacco
+# sofisticato: basta un giorno storto nella catena di distribuzione di qualcun altro.
+#
+# CLOUDFLARE NON PUBBLICA CHECKSUM. Verificato sul loro elenco dei rilasci: 26 file allegati alla
+# versione 2026.8.2, nessuno di impronte. Quindi le impronte qui sotto le abbiamo calcolate noi
+# scaricando i binari, e ricalcolate da un secondo scaricamento per accorgerci se il canale
+# servisse due byte diversi. Non e' una firma dell'autore ed e' bene dirlo: e' un blocco. Dice
+# "questo e' esattamente il file che abbiamo guardato", non "questo file viene da Cloudflare".
+#
+# PER AGGIORNARE cloudflared: si cambia la versione, si scaricano i due binari, si calcola
+# sha256sum, e si scrivono qui le impronte nuove. Se si cambia solo la versione la costruzione
+# fallisce, ed e' voluto: e' l'unica cosa che impedisce di tornare per distrazione a prendere per
+# buono quello che arriva.
 ARG BUILD_ARCH
-RUN set -x && \
+ARG CLOUDFLARED_VERSION=2026.8.2
+ARG CLOUDFLARED_SHA256_AMD64=fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+ARG CLOUDFLARED_SHA256_ARM64=7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790
+RUN set -eux && \
     if [ "${BUILD_ARCH}" = "aarch64" ]; then \
-        CF_ARCH="arm64"; \
+        CF_ARCH="arm64"; CF_SHA="${CLOUDFLARED_SHA256_ARM64}"; \
     elif [ "${BUILD_ARCH}" = "amd64" ]; then \
-        CF_ARCH="amd64"; \
-    elif [ "${BUILD_ARCH}" = "armhf" ] || [ "${BUILD_ARCH}" = "armv7" ]; then \
-        CF_ARCH="arm"; \
-    elif [ "${BUILD_ARCH}" = "i386" ]; then \
-        CF_ARCH="386"; \
+        CF_ARCH="amd64"; CF_SHA="${CLOUDFLARED_SHA256_AMD64}"; \
     else \
-        CF_ARCH="amd64"; \
+        echo "Architettura non prevista: ${BUILD_ARCH}. config.yaml ne dichiara due, aarch64 e amd64." >&2; \
+        exit 1; \
     fi && \
-    curl -L --output /usr/local/bin/cloudflared "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}" && \
-    chmod +x /usr/local/bin/cloudflared
+    curl -fsSL --retry 3 --output /tmp/cloudflared \
+        "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${CF_ARCH}" && \
+    echo "${CF_SHA}  /tmp/cloudflared" | sha256sum -c - && \
+    mv /tmp/cloudflared /usr/local/bin/cloudflared && \
+    chmod +x /usr/local/bin/cloudflared && \
+    /usr/local/bin/cloudflared --version
 
 # Create a working dir for all of our files.
 WORKDIR /app

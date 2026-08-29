@@ -503,11 +503,11 @@ class LinuxHost(IStateChangeHandler):
             CommandHandler.Get().RegisterHomeContext(homeContext)
 
             # Now start the main runner!
-            
+
             # --- SWEETPLACE CLOUD WORKER ---
             privateKey = self.GetPrivateKey()
             CloudWorkerInstance.Start(self.Logger, pluginId, privateKey, haConnection, storageDir)
-            
+
             # --- SWEETPLACE ONBOARDING REPORTER ---
             # Registra l'hub nel database Sweetplace, su un thread suo perche' e' una chiamata
             # di rete che non deve ritardare l'avvio.
@@ -518,12 +518,12 @@ class LinuxHost(IStateChangeHandler):
             # cioe' i suoi due soli argomenti di provenienza remota. Legato all'handshake, un hub
             # non si registrava affatto quando homeway.io non rispondeva.
             #
-            # Il CloudflareManager qui sotto ha bisogno che questa registrazione sia gia' arrivata
-            # (il backend rifiuta il token del tunnel a un device senza /device/ping,
-            # onboarding/src/index.ts:204), ma fra i due NON c'e' ordinamento garantito: sono due
-            # thread e le richieste possono essere in volo insieme. Se il provisioning arriva
-            # prima prende 404 e ritenta dopo 60s (cloudflaremanager.py:88-90): il costo e' un
-            # ritardo all'avvio, non una rottura.
+            # Il CloudflareManager qui sotto ha bisogno che questa registrazione sia gia' arrivata:
+            # il backend consegna il gettone del tunnel solo a chi presenta plugin_id e chiave
+            # privata combacianti con la riga dell'apparecchio, e quella riga la scrive /device/ping.
+            # Fra i due NON c'e' ordinamento garantito: sono due thread e le richieste possono
+            # essere in volo insieme. Se il provisioning arriva prima prende 403 e ritenta dopo 60s
+            # (il ciclo in cloudflaremanager.py): il costo e' un ritardo all'avvio, non una rottura.
             def _ReportToSweetplaceDB():
                 try:
                     import requests, time
@@ -715,13 +715,13 @@ class LinuxHost(IStateChangeHandler):
             # Using uuid.getnode() was unreliable on multi-NIC devices (picked wrong MAC).
             apiURLString = Backend.DevicePingUrl()
             baseApiUrl = apiURLString.rsplit('/device', 1)[0]
-            
+
             self.CloudflareInstance = CloudflareManager(self.Logger)
-            self.CloudflareInstance.Start(baseApiUrl, plugin_id=pluginId)
+            self.CloudflareInstance.Start(baseApiUrl, plugin_id=pluginId, private_key=self.GetPrivateKey())
             # Il pannello mostra l'indirizzo pubblico dell'hub, che solo il manager conosce.
             self.WebServer.SetCloudflareManager(self.CloudflareInstance)
-            
-            
+
+
             # QUI FINIVA L'AVVIO, E QUI C'ERA LA CONNESSIONE A UN SERVIZIO DI TERZI.
             #
             # Il progetto di origine teneva aperta una websocket permanente verso i propri
