@@ -1,29 +1,54 @@
-<h1 align="left" style="margin-bottom:20px">Sweetlink (Homeway.io Fork)</h1>
+<h1 align="left" style="margin-bottom:20px">Sweetlink</h1>
 
 > **Note:** the public repository [`6773939989/sweetlink-addon`](https://github.com/6773939989/sweetlink-addon)
 > is generated automatically by the release process and exists only so that Home Assistant can
 > install and update the add-on. It does not accept contributions: any change made there is
 > overwritten at the next release.
 
-Sweetlink is a custom fork of the official [Homeway.io](https://homeway.io) Home Assistant Add-on, tailored specifically for the Sweetplace ecosystem. 
+Sweetlink is the Home Assistant add-on that turns a Sweetplace hub into a device the owner can set
+up, reach and share from their phone, without touching a configuration file.
 
-It retains all the core secure tunneling and cloud synchronization features of Homeway (enabling official Alexa and Google Assistant integrations) while introducing private enterprise features for secure hardware deployments.
+## What it does
 
-## 🌟 Custom Sweetplace Features
+**Registers the hub, and proves which one it is.** At startup the add-on reads the physical MAC
+addresses of the board and reports them to the Sweetplace backend together with a locally
+generated identity: a plugin id and a private key that never leave the device except to
+authenticate it. The public hostname is minted by the backend, not chosen here.
 
-This fork introduces the following capabilities on top of the Homeway core:
+**Puts the hub on the internet through its own tunnel.** The backend provisions a Cloudflare
+tunnel and the DNS record that points at it; the add-on runs the connector. The address is derived
+from the hardware, so it is stable for the life of the device and survives a tunnel being
+recreated.
 
-- **Zero-Touch Provisioning (Hardware Claiming):** At startup, the AddOn discovers the hardware's physical MAC addresses and reports them to the Sweetplace backend together with its locally generated plugin id and private key. This allows end-users to link their physical device with zero technical configuration. The report runs independently of the Homeway connection: it sends only locally-known data, so hub registration no longer waits on homeway.io. Note that the public hostname itself is assigned by the Sweetplace backend, not by the device — the add-on deliberately submits an empty URL so the backend can mint or preserve it.
-- **Granular Entity Filtering (YAML):** Bypasses the standard Home Assistant UI toggle system. The AddOn strictly enforces exposure rules based on local YAML configuration files (`alexa.yaml`, `google_assistant.yaml`), ensuring only whitelisted entities ever leave the local network.
+**Hands the hub to its owner.** A code is printed on the label under the device, next to a QR the
+add-on draws in its own panel. The customer scans it, confirms an email address, and from that
+moment the hub is theirs — the add-on panel stops offering the claim and starts offering the way
+back in.
 
-## 🤝 Upstream Features (Homeway.io)
+**Creates the accounts of the household.** The owner and every person they add get a Home Assistant
+account, a login name they choose, and a password generated once. They are all standard users, never
+administrators. Each person receives a single-use invite link; nobody types a password into this
+add-on.
 
-This project is proudly built on the shoulders of the [Homeway.io](https://homeway.io) open-source project. It inherits:
-- Free remote access to Home Assistant
-- Native Alexa and Google Assistant cloud integrations
-- Fast WebRTC camera streaming
+**Sets the home position.** The address confirmed during activation becomes the coordinates of the
+Home zone, so presence and anything that depends on being home works without further setup.
 
-*Note: For official Homeway support, please visit the official Homeway community. This custom fork is maintained privately for the Sweetplace system and is not supported by the original Homeway developers.*
+**Keeps the login from being brute-forced.** The add-on writes the `http:` section Home Assistant
+needs to see the real address of whoever is connecting, and closes an address out after five wrong
+attempts. When that locks the household out of their own house, the owner can lift the block for
+their own connection from the portal, and only for that one.
 
-## 📜 License
-This project is licensed under the AGPLv3 License, in compliance with the original upstream Homeway repository.
+**Prepares the device for cloning.** Before a disk is duplicated onto a production run, the panel
+reports what is still on it that must not be copied — identities, keys, accounts — and stays red
+while anything is left. Cloning a configured device is the fastest way to ship a fleet that shares
+one identity.
+
+## Upstream
+
+Sweetlink is a fork of the [Homeway.io](https://homeway.io) Home Assistant add-on and is licensed
+under **AGPL-3.0**, like the project it comes from. Parts of that codebase are still in the tree:
+where they reached services that are not ours, they are no longer reachable, and each of those
+places says so and why in a comment next to it.
+
+For Homeway support, please use the official Homeway community. This fork is maintained privately
+for the Sweetplace system and the original developers do not support it.
