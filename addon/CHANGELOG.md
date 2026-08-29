@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.66
+
+- 🏠 Chi ha registrato la casa trova la voce Sweetplace nella propria barra laterale, e da lì apre la gestione delle persone. Prima la vedevano solo gli amministratori, e il proprietario è un utente standard: non aveva nessun posto da cui farlo.
+- 🧰 Il pannello mostra a ciascuno quello che gli compete: gli strumenti di fabbrica — dettagli tecnici e preparazione dell'immagine — restano a chi installa.
+- 🖥️ La pagina usa tutta la larghezza dello schermo e dispone le schede affiancate quando c'è spazio, invece di incolonnarle in una striscia da telefono.
+
 ## 2.7.65
 
 - 🚪 «Apri la configurazione» su un hub già registrato non fa più ripartire la registrazione da zero: apre il portale già dentro, alla gestione di casa. Il pulsante lo mostra solo a chi è amministratore su questo sistema.

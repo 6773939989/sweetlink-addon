@@ -626,7 +626,8 @@ class LinuxHost(IStateChangeHandler):
                                             WebServer.Instance.SetClaimInfo(
                                                 righe[0].get("claim_code"),
                                                 righe[0].get("claim_status"),
-                                                righe[0].get("claim_url"))
+                                                righe[0].get("claim_url"),
+                                                righe[0].get("owner_auth_id"))
                                 except Exception:
                                     registrato = False
 

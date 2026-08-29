@@ -58,6 +58,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # Chiede al backend un indirizzo con cui aprire il portale gia' dentro. Sta fuori di qui
         # perche' richiede la chiave privata, che questo server non ha e non deve avere.
         self.PanelLinkProvider = panelLinkProvider
+        # Vuoto finche' il backend non lo comunica: prima della rivendicazione non esiste nessun
+        # proprietario, e trattare "non lo so ancora" come "sei tu" aprirebbe il pannello al
+        # primo che passa.
+        self.OwnerAuthId:Optional[str] = None
         self.Config = config
         # Il referto sulla preparazione dell'immagine e l'azzeramento vero e proprio. Stanno qui
         # e non nel tab di configurazione perche' chi prepara l'immagine deve vedere cosa c'e'
@@ -119,7 +123,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     # Chiamato dal reporter a ogni registrazione riuscita: il codice non cambia mai, ma lo stato
     # della rivendicazione si', e il pannello deve dire se l'hub e' ancora da consegnare.
     def SetClaimInfo(self, claimCode:Optional[str], claimStatus:Optional[str],
-                     claimUrl:Optional[str] = None) -> None:
+                     claimUrl:Optional[str] = None, ownerAuthId:Optional[str] = None) -> None:
         if isinstance(claimCode, str) and len(claimCode) > 0:
             self.ClaimCode = claimCode
         if isinstance(claimStatus, str) and len(claimStatus) > 0:
@@ -128,6 +132,11 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # Solo https: questo indirizzo finisce dentro un QR che verra' stampato e messo in
             # mano a un cliente, e un'etichetta sbagliata non si corregge da remoto.
             self.ClaimUrl = claimUrl
+        # L'utente di Home Assistant a cui appartiene la casa. Il pannello ne ha bisogno perche'
+        # il proprietario e' un utente standard: senza questo dato non c'e' modo di distinguerlo
+        # dagli altri membri, e il pannello dovrebbe o nascondersi anche a lui o aprirsi a tutti.
+        if isinstance(ownerAuthId, str) and len(ownerAuthId) > 0:
+            self.OwnerAuthId = ownerAuthId
 
 
     # Il QR dell'etichetta, come SVG da mettere nella pagina.
@@ -287,10 +296,16 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             # niente di nuovo, gli si sta risparmiando un giro di email.
             if route.endswith("/panel-link"):
                 if not WebServer.Instance.RunDevWebServer:
+                    # L'amministratore O il proprietario di casa. Il secondo e' un utente
+                    # standard e resterebbe fuori da un controllo sul solo ruolo, che e'
+                    # esattamente il motivo per cui questa strada esiste: e' casa sua.
                     userId = self.headers.get(HaAdmin.c_UserIdHeader, "")
-                    if WebServer.Instance.AdminCheck(userId) is not True:
-                        WebServer.Instance.Logger.warning(f"Ingresso nel portale rifiutato: [{userId}] non risulta amministratore.")
-                        self._sendJson(403, {"error": "solo un amministratore puo' aprire la configurazione da qui"})
+                    proprietario = WebServer.Instance.OwnerAuthId
+                    eProprietario = (isinstance(proprietario, str) and len(proprietario) > 0
+                                     and userId == proprietario)
+                    if not eProprietario and WebServer.Instance.AdminCheck(userId) is not True:
+                        WebServer.Instance.Logger.warning(f"Ingresso nel portale rifiutato per [{userId}].")
+                        self._sendJson(403, {"error": "questa configurazione la puo' aprire chi ha registrato la casa"})
                         return
                 url = WebServer.Instance.PanelLinkProvider()
                 if not url:
@@ -401,6 +416,27 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 # Non si disegna il QR di un hub gia' rivendicato: non serve piu' a nessuno, e
                 # lasciarlo li' fa credere che ci sia ancora una consegna da fare.
                 qrSvg = WebServer._QrSvg(claimUrl)
+
+            # CHI STA GUARDANDO QUESTA PAGINA.
+            #
+            # Tre casi, e tre pagine diverse. L'amministratore vede tutto, compresa la
+            # preparazione dell'immagine. Il proprietario di casa e' un utente standard e non
+            # deve vedere gli strumenti di fabbrica, ma deve avere da qualche parte il modo di
+            # gestire le persone di casa: fino a ieri quel posto non esisteva, perche' la voce
+            # nella barra laterale la vedevano solo gli amministratori. Gli altri membri della
+            # casa non hanno niente da fare qui.
+            #
+            # In sviluppo non c'e' nessun Home Assistant a cui chiedere, quindi si mostra tutto:
+            # e' lo stesso ripiego che usa la rotta dell'azzeramento.
+            utenteId = self.headers.get(HaAdmin.c_UserIdHeader, "")
+            if WebServer.Instance.RunDevWebServer:
+                sonoAmministratore = True
+                sonoProprietario = True
+            else:
+                sonoAmministratore = WebServer.Instance.AdminCheck(utenteId) is True
+                proprietario = WebServer.Instance.OwnerAuthId
+                sonoProprietario = (isinstance(proprietario, str) and len(proprietario) > 0
+                                    and utenteId == proprietario)
 
             # L'indirizzo pubblico arriva dal backend insieme al token del tunnel: finche' il
             # tunnel non e' salito non lo conosciamo.
@@ -517,6 +553,61 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     '</div>')
                 datiCodice = ""
 
+            # LE DUE SCHEDE DI SERVIZIO LE VEDE SOLO CHI DEVE.
+            #
+            # Dettagli tecnici e Preparazione immagine sono strumenti di chi installa: dentro
+            # ci sono l'indirizzo hardware, il codice dell'etichetta e il pulsante che
+            # distrugge l'identita' dell'apparecchio. Il proprietario di casa non ha niente
+            # da farci, e gli altri membri nemmeno.
+            #
+            # Non e' l'unica difesa e non pretende di esserlo: la rotta che azzera controlla
+            # da se' chi la chiama, perche' Home Assistant lascia raggiungibile la rotta
+            # ingress a chiunque abbia un account qui. Questo decide cosa si vede, non cosa
+            # si puo' fare.
+            sezioniRiservate = """
+            <div class="featureHolder">
+                <details>
+                    <summary class="featureHeader">Dettagli tecnici</summary>
+                    <div class="datiGriglia">
+                        <div class="datiEtichetta">Indirizzo hardware</div>
+                        <div class="fieldValue">"""+escape(macText)+"""</div>
+                        <div class="datiEtichetta">Indirizzo pubblico</div>
+                        <div class="fieldValue">"""+publicUrlHtml+"""</div>
+                        """+datiCodice+"""
+                    </div>
+                </details>
+            </div>
+
+            <div class="featureHolder grigliaIntera">
+                <details id="prepDetails">
+                    <summary class="featureHeader">Preparazione immagine</summary>
+                    <div class="prepSummary" style="color:"""+prepSummaryColor+""";">
+                        """+prepSummaryText+"""
+                    </div>
+                    """+prepRows+"""
+                    <div class="prepDanger">
+                        Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto, poi ferma
+                        l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
+                    </div>
+                    <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
+                    <div class="featureButton redFeatureButton" id="prepButton">
+                        Azzera e prepara la clonazione
+                    </div>
+                    <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); white-space: pre-wrap; word-break: break-word;"></div>
+                </details>
+            </div>
+""" if sonoAmministratore else ""
+
+            # Chi non e' ne' amministratore ne' proprietario non ha niente da fare qui, e
+            # dirglielo e' meglio che mostrargli una pagina che non lo riguarda.
+            if not sonoAmministratore and not sonoProprietario:
+                sezionePrincipale = (
+                    '<div class="featureHolder"><div>'
+                    '<div class="featureHeader">Niente da fare qui</div>'
+                    '<div class="featureDetails">Questa pagina serve a chi ha registrato la casa. '
+                    "Tu la casa la usi dall'app: qui non c'e' niente che ti riguardi.</div>"
+                    '</div></div>')
+
             html = """
 <html>
 <head><title>Sweetplace Control</title>
@@ -610,7 +701,35 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     }
     .panel {
         width: 100%;
-        max-width: 480px;
+        /* LARGO, NON UNA COLONNA DA TELEFONO IN MEZZO A UNO SCHERMO VUOTO.
+           Questa pagina la guarda chi installa, da un portatile, e le sue schede sono
+           indipendenti fra loro: incolonnarle a 480px voleva dire scorrere per vedere una cosa
+           che poteva stare accanto a un'altra. */
+        max-width: 1100px;
+    }
+
+    /* Le schede si dispongono da sole: affiancate se c'e' spazio, in colonna se non ce n'e'.
+       Nessun punto di rottura scritto a mano: la soglia e' la larghezza minima di una scheda,
+       che e' l'unica cosa che conta davvero. */
+    .griglia {
+        display: grid;
+        /* Fra 340 e 520: sotto i 340 una scheda non si legge, sopra i 520 una riga di testo
+           diventa troppo lunga per l'occhio, e con una scheda sola, quello che vede il
+           proprietario di casa, si allargherebbe per tutto lo schermo. */
+        grid-template-columns: repeat(auto-fit, minmax(340px, 520px));
+        justify-content: center;
+        gap: var(--ha-space-3);
+        align-items: start;
+    }
+    /* Dentro la griglia le schede non hanno bisogno del proprio margine sotto: lo spazio lo
+       mette la griglia, e sommarli lascerebbe un vuoto doppio fra due righe di schede. */
+    .griglia > .featureHolder {
+        margin-bottom: 0;
+    }
+    /* La preparazione dell'immagine occupa tutta la riga: dentro c'e' un referto che puo'
+       essere lungo, e a meta' larghezza si spezzerebbe in una colonna di parole. */
+    .grigliaIntera {
+        grid-column: 1 / -1;
     }
 
     .brand {
@@ -921,45 +1040,14 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             <a href="https://sweetplace.me" target="_blank" class="whiteLink">Sweetplace</a>
         </div>
 
-        <div>
-            <div class="statusRow" style="color:"""+statusColor+""";">
-                <div class="statusDot" style="background-color:"""+statusColor+""";"></div>
-                <div>"""+statusText+"""</div>
-            </div>
+        <div class="statusRow" style="color:"""+statusColor+""";">
+            <div class="statusDot" style="background-color:"""+statusColor+""";"></div>
+            <div>"""+statusText+"""</div>
+        </div>
 
+        <div class="griglia">
             """+sezionePrincipale+"""
-
-            <div class="featureHolder">
-                <details>
-                    <summary class="featureHeader">Dettagli tecnici</summary>
-                    <div class="datiGriglia">
-                        <div class="datiEtichetta">Indirizzo hardware</div>
-                        <div class="fieldValue">"""+escape(macText)+"""</div>
-                        <div class="datiEtichetta">Indirizzo pubblico</div>
-                        <div class="fieldValue">"""+publicUrlHtml+"""</div>
-                        """+datiCodice+"""
-                    </div>
-                </details>
-            </div>
-
-            <div class="featureHolder">
-                <details id="prepDetails">
-                    <summary class="featureHeader">Preparazione immagine</summary>
-                    <div class="prepSummary" style="color:"""+prepSummaryColor+""";">
-                        """+prepSummaryText+"""
-                    </div>
-                    """+prepRows+"""
-                    <div class="prepDanger">
-                        Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto, poi ferma
-                        l'add-on. Serve prima di clonare il disco su altri hub. Non si annulla.
-                    </div>
-                    <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
-                    <div class="featureButton redFeatureButton" id="prepButton">
-                        Azzera e prepara la clonazione
-                    </div>
-                    <div id="prepResult" class="featureDetails" style="margin-top:var(--ha-space-3); white-space: pre-wrap; word-break: break-word;"></div>
-                </details>
-            </div>
+            """+sezioniRiservate+"""
         </div>
     </div>
 </div>
