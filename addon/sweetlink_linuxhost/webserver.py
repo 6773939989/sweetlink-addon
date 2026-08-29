@@ -596,8 +596,8 @@ class WebServer(IAccountLinkStatusUpdateHandler):
             <section class="sezione">
                 <div>
                     <h2 class="sezioneTitolo">Dettagli tecnici</h2>
-                    <p class="sezioneNota">I tre valori che servono all'assistenza quando
-                    qualcosa non torna.</p>
+                    <p class="sezioneNota">Come si chiama questo apparecchio, dove risponde e
+                    con che codice si registra. Servono a chi lo installa e a chi da' assistenza.</p>
                 </div>
                 <div class="dati">
                     <div class="datiEtichettaRiga">Indirizzo hardware</div>
@@ -612,7 +612,8 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 <div>
                     <h2 class="sezioneTitolo">Preparazione immagine</h2>
                     <p class="sezioneNota">Da fare prima di clonare il disco su altri hub.
-                    Cancella l'identita' di questo apparecchio: non si annulla.</p>
+                    Cancella l'identita' di questo apparecchio.
+                    <b>L'operazione non e' reversibile: non si torna indietro.</b></p>
                 </div>
                 <div>
                     <div class="prepSummary" style="color:"""+prepSummaryColor+""";">
@@ -629,7 +630,9 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                         <summary class="featureHeader">Azzera questo apparecchio</summary>
                         <div class="prepDanger">
                             Azzera identita' Sweetlink, vincolo hardware e chiave del tunnel protetto,
-                            poi ferma l'add-on.
+                            poi ferma l'add-on. Quello che viene cancellato non si recupera:
+                            questo apparecchio torna come appena uscito di fabbrica, e chi lo
+                            aveva rivendicato deve rifare la registrazione da capo.
                         </div>
                         <input id="prepConfirm" class="prepInput" type="text" autocomplete="off" spellcheck="false" placeholder="scrivi AZZERA per confermare">
                         <div class="featureButton redFeatureButton" id="prepButton">
@@ -856,7 +859,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         display: grid;
         grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
         gap: var(--ha-space-4);
-        padding: var(--ha-space-5) 0;
+        /* Piu' aria sotto che sopra: il filetto separa due sezioni, e con lo stesso spazio da
+           una parte e dall'altra non si capisce a quale delle due appartenga cio' che gli sta
+           vicino. Il contenuto respira dopo l'ultima riga, non prima della successiva. */
+        padding: var(--ha-space-5) 0 calc(var(--ha-space-5) + 24px);
         border-top: 1px solid var(--divider-color);
     }
     @media (max-width: 720px) {

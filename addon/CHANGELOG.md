@@ -1,6 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.72
+
+- ✍️ «Non si annulla» diventa «l'operazione non è reversibile: non si torna indietro», e il riquadro rosso dice cosa succede davvero: l'apparecchio torna come appena uscito di fabbrica e chi lo aveva rivendicato deve rifare la registrazione.
+- ✍️ La spiegazione dei dettagli tecnici diceva una cosa non vera. Adesso dice cosa sono quei valori.
+- 📐 Più aria in fondo a ogni sezione.
+
 ## 2.7.71
 
 - 📐 I due pulsanti della pagina hanno la stessa larghezza. Finché quello che azzera l'apparecchio era più grande di quello che apre la configurazione, il più pericoloso era anche il primo che l'occhio raggiungeva.
