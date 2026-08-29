@@ -8,7 +8,17 @@ slug: "sweetplace"
 url: "https://sweetplace.me"
 
 # The icon used if the user adds our web ui to the side bar.
-panel_icon: mdi:home-sound-out
+# L'ICONA DELLA BARRA LATERALE, E PERCHE' NON E' LA NOSTRA.
+#
+# Home Assistant disegna questa voce con <ha-icon>, che sa risolvere solo nomi di raccolte
+# registrate: mdi: e quelle che un'integrazione dichiara al frontend. Un add-on non puo'
+# registrarne una — servirebbe un componente personalizzato dentro Home Assistant, non un
+# add-on — quindi qui non si puo' mettere un file SVG nostro.
+#
+# La sagoma del marchio, ricavata dal logo e pronta all'uso, sta in sweetlink/marchio/. Il
+# giorno che ci sara' un'integrazione, il nome da scrivere qui diventa il suo.
+# Nel frattempo: mdi:ruler, che e' la stessa cosa che il marchio disegna.
+panel_icon: mdi:ruler
 # Indicates we will have Web Ui the user can use.
 ingress: true
 # IL PANNELLO COMPARE NELLA BARRA LATERALE DI TUTTI, NON DEI SOLI AMMINISTRATORI.
@@ -86,4 +96,4 @@ image: ghcr.io/6773939989/sweetlink-addon/{arch}
 # Note when this version number changes, we must make a release to start a docker container build immediately, since HA will start looking for the new version.
 # Basically: Make the final commit -> test and check lint actions (if a docker change, push to docker-test to ensure it builds) -> bump the version number -> create GitHub release.
 # UPDATE THE CHANGE LOG!
-version: 2.7.67
+version: 2.7.68

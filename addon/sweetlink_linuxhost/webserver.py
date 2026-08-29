@@ -616,9 +616,20 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 # tutti gli altri: se compare, tanto vale che dica perche' non serve a lui.
                 corpoPagina = (
                     '<div class="featureHolder"><div>'
-                    '<div class="featureHeader">Niente da fare qui</div>'
-                    '<div class="featureDetails">Questa pagina serve a chi ha registrato la casa. '
-                    "Tu la casa la usi dall'app: qui non c'e' niente che ti riguardi.</div>"
+                    '<div class="featureHeader">Questa pagina non serve a te</div>'
+                    '<div class="featureDetails" style="line-height:1.6;">'
+                    "Da qui si gestisce la casa nel suo insieme: chi puo' entrare, l'indirizzo, "
+                    "le impostazioni dell'apparecchio. Sono cose che valgono per tutti quelli che "
+                    "ci abitano, e le tiene chi ha registrato la casa."
+                    '<br><br>'
+                    "Tu la casa la usi dall'app Home Assistant, con il nome di accesso e la "
+                    "password che ti sono stati consegnati: da li' vedi e comandi tutto quello a "
+                    "cui hai accesso, da qualunque posto."
+                    '<br><br>'
+                    "Se ti serve qualcosa che da qui non ottieni, un nome diverso, una password "
+                    "nuova, l'accesso a qualcosa che non vedi, chiedilo a chi ha registrato la "
+                    "casa: e' l'unico che puo' farlo."
+                    '</div>'
                     '</div></div>')
 
             html = """
