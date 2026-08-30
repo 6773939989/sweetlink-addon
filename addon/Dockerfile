@@ -120,7 +120,7 @@ LABEL \
     org.opencontainers.image.description="${BUILD_DESCRIPTION}" \
     org.opencontainers.image.vendor="Sweetplace" \
     org.opencontainers.image.authors="Sweetplace" \
-    org.opencontainers.image.licenses="AGPL-3.0-only" \
+    org.opencontainers.image.licenses="AGPL-3.0-or-later" \
     org.opencontainers.image.url="https://github.com/6773939989/sweetlink-addon" \
     org.opencontainers.image.source="https://github.com/6773939989/sweetlink-addon" \
     org.opencontainers.image.documentation="https://github.com/6773939989/sweetlink-addon/blob/main/README.md" \

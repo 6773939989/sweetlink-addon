@@ -1,32 +1,49 @@
-## [Sweetplace.me](https://sweetplace.me/?source=addon_readme)
+# Sweetlink
 
+The Home Assistant add-on that turns a Sweetplace hub into a device its owner can set up, reach and
+share from a phone, without touching a configuration file.
 
-Sweetplace is a Home Assistant community project aiming to provide free, private, and secure cloud tools for the entire Home Assistant community.
+Sweetlink is not a general-purpose add-on and is not meant to be installed by hand: it ships
+pre-installed on Sweetplace hubs and is configured during activation.
 
-## Features
+## What it does
 
-- 🚀 **Free.** Remote access to your full Home Assistant from anywhere.
-- 🤖 **Helpful.** [Alexa](https://sweetplace.me/alexa?source=addon_readme) and [Google Assistant](https://sweetplace.me/googleassistant?source=addon_readme) voice control for your Home Assistant.
-- 📱 **Mobile.** Free remote access for the Official [Home Assistant Android and iOS apps](https://sweetplace.me/app?source=addon_readme)
-- 📺 **Streamable.** Free [WebRTC camera streaming](https://blog.sweetplace.me/free-webrtc-video-streaming-for-home-assistant/) including both STUN and TURN server access.
-- 🔒 **Secure.** We offer advanced security features to ensure only you have access.
-- 🔭 **Private.** We don't store your data in our cloud and will never sell or share your information.
-- ⚡ **Fast.** Built on a worldwide server network to provide the lowest latency and fastest experience possible.
-- 🛠️ **Easy.** No maintenance or technical knowledge is required to set up. Your Home Assistant is always online, secure, and ready for you.
-- 🌍 **Community.** Sweetplace is built for the community by the community. Join our [Discord server](https://discord.gg/zxbvtgU6dq) for discussions, feedback, and more.
+- **Registers the hub.** At startup it reports the board's physical network addresses together with
+  an identity generated on the device — an id and a private key that only ever leave it to
+  authenticate it.
+- **Puts the hub on the internet.** Each hub gets its own Cloudflare tunnel and its own hostname. No
+  ports opened on the router, no fixed IP, no per-device subscription.
+- **Hands the hub to its owner.** A code printed on the label under the device, next to a QR the
+  panel draws. The customer scans it, confirms an email address, and from that moment the hub is
+  theirs.
+- **Creates the household accounts.** The owner and everyone they add get a Home Assistant account
+  and a password generated once. They are all standard users, never administrators.
+- **Sets the home position.** The address confirmed during activation becomes the coordinates of the
+  Home zone.
+- **Limits login attempts.** Five wrong passwords and the address is locked out; the owner can lift
+  the block for their own connection, and only for that one.
+- **Prepares the device for cloning.** Before a disk is duplicated, the panel reports what is still
+  on it that must not be copied — identities, keys, accounts.
 
-## Try It Now!
+## Setup
 
-- Click the "INSTALL" text above.
-- When it's done installing, click the "START" text above.
-- Click the "OPEN WEB UI" text above.
-- Click the button to link your Sweetplace account.
-- Done!
+Nothing to do here. The hub is delivered activated; the panel in the sidebar shows its public
+address, its state, and the way back into the household settings.
 
-If you need help, read our [complete setup guide](https://sweetplace.me/getstarted?source=addon_readme_full_guide)!
+## Support
 
-### Feedback & Bugs
+Sweetplace hubs are supported through [sweetplace.me/support](https://sweetplace.me/support).
 
-Our community drives the development of Sweetplace.
+## Origin, and what this is derived from
 
-Join our [Discord server](https://discord.gg/zxbvtgU6dq) to share feedback, ideas, or issues. Or reach out to us directly via [our support system](https://sweetplace.me/support).
+Sweetlink is a fork of the [Homeway.io Home Assistant add-on](https://github.com/homewayio/AddOn),
+which is itself derived from
+[OctoEverywhere](https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere). Both are licensed
+under the GNU Affero General Public License; so is this fork. See
+[`LICENSE`](https://github.com/6773939989/sweetlink-addon/blob/main/LICENSE) and
+[`NOTICE.md`](https://github.com/6773939989/sweetlink-addon/blob/main/NOTICE.md), which records what
+was changed and when.
+
+**This fork is not supported by, affiliated with, or endorsed by Homeway.io or OctoEverywhere, and
+they cannot help with it.** For their projects, use their own channels — not ours, and not this
+repository.

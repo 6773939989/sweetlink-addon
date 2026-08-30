@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.80
+
+- 📝 La descrizione e la documentazione dell'add-on sono riscritte: quelle di prima erano i testi del progetto da cui questo deriva, con il marchio sostituito, e mandavano nel Discord di un altro progetto chiamandolo nostro.
+- 📝 Un file NOTICE dichiara da cosa deriva l'add-on, cosa è stato cambiato e quando, e cosa viene incorporato nell'immagine senza essere scritto da noi.
+
 ## 2.7.79
 
 - 🔗 L'indirizzo dell'add-on e quello dell'archivio puntano al repository pubblico, da cui si arriva al sorgente. Prima puntavano al sito del prodotto, che in una scheda tecnica non serve a nessuno.

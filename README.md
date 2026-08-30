@@ -45,12 +45,19 @@ reports what is still on it that must not be copied — identities, keys, accoun
 while anything is left. Cloning a configured device is the fastest way to ship a fleet that shares
 one identity.
 
-## Upstream
+## Origin, and what this is derived from
 
-Sweetlink is a fork of the [Homeway.io](https://homeway.io) Home Assistant add-on and is licensed
-under **AGPL-3.0**, like the project it comes from. Parts of that codebase are still in the tree:
-where they reached services that are not ours, they are no longer reachable, and each of those
-places says so and why in a comment next to it.
+    OctoEverywhere            https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere
+      └── Homeway.io add-on   https://github.com/homewayio/AddOn
+            └── Sweetlink     this repository
 
-For Homeway support, please use the official Homeway community. This fork is maintained privately
-for the Sweetplace system and the original developers do not support it.
+Both upstream projects are distributed under the **GNU Affero General Public License**, and so is
+this fork. [`NOTICE.md`](NOTICE.md) records what was changed and when; [`LICENSE`](LICENSE) is the
+full text.
+
+Parts of the upstream codebase are still in the tree. Where they reached services that are not
+ours, they are no longer reachable.
+
+**This fork is not supported by, affiliated with, or endorsed by Homeway.io or OctoEverywhere.**
+Please do not take questions about it to their communities: they did not write this and cannot help
+with it.

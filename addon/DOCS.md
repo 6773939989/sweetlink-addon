@@ -1,48 +1,55 @@
-# Sweetplace
+# Sweetlink
 
-Free, secure, and private advanced cloud features for Home Assistant. Made by the Home Assistant community for the Home Assistant community!
+The add-on that makes a Sweetplace hub reachable, deliverable and manageable from a phone.
 
-## First Time Setup
+It ships pre-installed and pre-configured on Sweetplace hubs. There is no manual installation
+procedure, and nothing here needs to be set up by hand.
 
-1) Install the Sweetplace app using our step-by-step [Getting Started Guide.](https://sweetplace.me/getstarted?source=addon_docs)
-2) Be sure to enable the following toggles for the Sweetplace app
-    - Start on boot: Enabled
-    - Watchdog: Enabled
-    - Auto update: Enabled
-    - Show in sidebar: Optional
-3) Start the Sweetplace app
-4) Use the "Open Web UI" button to finish the app setup and link the app to your Sweetplace account.
+## The panel
 
-## Additional Feature Setup
+The **Sweetlink** entry in the sidebar opens the add-on's own page. What it shows depends on who is
+looking:
 
-### Sweetplace Settings Web UI
+- an **administrator** of this Home Assistant sees everything: the hub's public address and state,
+  the household, the technical details, and the pre-cloning report;
+- the **owner of the home** — a standard user, not an administrator — sees the household and the
+  way into the portal;
+- everyone else has no reason to open it and finds an explanation instead.
 
-Use the "Open Web UI" button on the Sweetplace app info tab to access the Sweetplace app settings UI.
+### Before the hub is handed over
 
-The Sweetplace Settings Web UI shows:
-- The status of your hub.
-- Its hardware identifier, useful when contacting support.
-- A button that opens the Sweetplace setup portal with your device already identified.
+The panel draws the QR code and the claim code that go on the label under the device. The customer
+scans the QR, or types the code on the activation site. Without that code nobody can claim the hub.
 
-### 📱 Home Assistant App Remote Access
+### After it has been handed over
 
-Sweetplace enables free remote access for the official Home Assistant iPhone and Android apps.
+The panel shows the hub's public address, whether the tunnel is up, and a button that opens the
+household settings with the device already identified — no second login.
 
-[Setup Guide](https://sweetplace.me/app?source=addon_docs)
+### Technical details
 
-### 🤖 Google Home & Alexa Setup
+Hardware address, public address and claim code: the three values support asks for when something
+is not working.
 
-Set up Google Home or Alexa using our worldwide server network for lightning-fast voice control.
+### Preparing an image for cloning
 
-[Setup Guide](https://sweetplace.me/assistant?source=addon_docs)
+Duplicating the disk of a configured hub is the fastest way to ship a fleet that shares one
+identity. Before cloning, the panel reports what is still on the device that must not be copied —
+identity, keys, tunnel credentials, Home Assistant accounts, paired phones — and stays red while
+anything is left.
 
-### 🏠 Local Access
+**Wiping is not reversible.** The device goes back to the state it left the factory in, and whoever
+had claimed it has to activate it again.
 
-Free and secure remote access to any LAN web service, such as Node-Red, PiHole, AdGuard, Bitwarden, and more!
+## Support
 
-[Setup Guide](https://sweetplace.me/local-access?source=addon_docs)
+Sweetplace hubs are supported through [sweetplace.me/support](https://sweetplace.me/support).
 
-## Help & Support
+## Origin
 
-- [Contact the Sweetplace support team.](https://sweetplace.me/support?source=addon_docs)
-- [Join our Discord community to get community support.](https://sweetplace.me/r/discord?source=addon_docs)
+Sweetlink is a fork of the [Homeway.io Home Assistant add-on](https://github.com/homewayio/AddOn),
+itself derived from [OctoEverywhere](https://github.com/QuinnDamerell/OctoPrint-OctoEverywhere),
+both under the GNU Affero General Public License. Details in
+[`NOTICE.md`](https://github.com/6773939989/sweetlink-addon/blob/main/NOTICE.md).
+
+This fork is not supported by, affiliated with, or endorsed by either project.
