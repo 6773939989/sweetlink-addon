@@ -1,4 +1,19 @@
 ---
+# QUESTO E' IL MANIFESTO DELL'ARCHIVIO, NON DELL'ADD-ON.
+#
+# Home Assistant lo legge dopo aver clonato l'archivio, e ne mostra i tre campi nell'elenco degli
+# archivi. Il campo `url` NON e' quello da cui si scarica: quello e' l'indirizzo git che si digita
+# quando si aggiunge l'archivio, e il Supervisor se lo tiene per se'. Qui c'era l'indirizzo del
+# prodotto, e l'elenco mostrava una riga da cui non si scarica niente — accanto a tutti gli altri
+# archivi, che li' mostrano il proprio git.
+#
+# Adesso mostra il git, e sono la stessa cosa: si digita questo indirizzo e in elenco compare
+# questo indirizzo. Serve anche a un'altra cosa — questo add-on e' un lavoro derivato sotto
+# AGPL-3.0, e chi lo trova installato ha cosi' un modo di arrivare al sorgente senza doverlo
+# cercare.
+#
+# L'indirizzo del prodotto resta in addon/config.yaml, che e' la pagina dell'add-on: li' chi apre
+# la scheda cerca il prodotto, non il codice.
 name: Sweetplace.me
-url: https://sweetplace.me
+url: https://github.com/6773939989/sweetlink-addon
 maintainer: Sweetplace Team <support@sweetplace.me>
