@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.79
+
+- 🔗 L'indirizzo dell'add-on e quello dell'archivio puntano al repository pubblico, da cui si arriva al sorgente. Prima puntavano al sito del prodotto, che in una scheda tecnica non serve a nessuno.
+
 ## 2.7.78
 
 - 📐 Le due colonne del pannello sono più distanti e partono dalla stessa riga di testo, non più per coincidenza dei corpi del tema.
