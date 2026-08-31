@@ -1,9 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
-## 2.7.83
+## 2.7.84
 
 - 🐛 Il proprietario di casa entra nel pannello anche se il suo identificativo era stato registrato sbagliato. L'add-on ora lo ricava dall'anagrafica di Home Assistant partendo dal nome di accesso — l'unico dato verificabile su questa macchina — e corregge quello che ha in memoria il portale.
+- 🔑 Il proprietario chiuso fuori da Home Assistant ritrova nel portale il comando che rigenera la sua password: l'add-on stabilisce chi è appena si collega, senza aspettare che qualcuno apra il pannello.
 
 ## 2.7.82
 

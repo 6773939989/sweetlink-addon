@@ -365,7 +365,17 @@ class CloudWorker:
         try:
             if not isinstance(nomeAccesso, str) or len(nomeAccesso) == 0:
                 return None
-            if not self.ha_connection or not getattr(self.ha_connection, 'IsConnected', False):
+            if not self.ha_connection:
+                return None
+            # La stessa attesa dell'elenco delle persone, e per lo stesso motivo: questo giro
+            # parte anche dal ping che l'add-on manda appena acceso, quando la connessione a Home
+            # Assistant sta ancora facendo l'autenticazione. Senza attesa il proprietario non
+            # verrebbe risolto all'avvio, e il tentativo successivo e' fra sei ore.
+            attesa = 0
+            while not getattr(self.ha_connection, 'IsConnected', False) and attesa < 10:
+                time.sleep(1)
+                attesa += 1
+            if not getattr(self.ha_connection, 'IsConnected', False):
                 return None
             risposta = self.ha_connection.SendAndReceiveMsg({"type": "config/auth/list"}, timeout=5.0)
             if not risposta or not risposta.get('success'):

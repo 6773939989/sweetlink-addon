@@ -688,6 +688,29 @@ class LinuxHost(IStateChangeHandler):
                                 # al ritentativo dieci secondi dopo.
                                 CloudWorkerInstance.RegistrazioneConfermata.set()
                                 attesaSec = RIPETIZIONE_SEC
+
+                                # CHI E' IL PROPRIETARIO SI RISOLVE QUI, NON QUANDO QUALCUNO APRE
+                                # IL PANNELLO.
+                                #
+                                # Il caso che lo impone e' proprio quello in cui serve: il
+                                # proprietario chiuso fuori da Home Assistant. In Home Assistant
+                                # non ci entra — e' il motivo per cui sta cercando di rientrare —
+                                # quindi il pannello non lo apre nessuno e la correzione non
+                                # partirebbe mai. Il portale, intanto, mostra il comando che
+                                # rigenera la sua password solo se il backend ha un
+                                # identificativo: senza questo giro, l'unica strada di rientro
+                                # resta nascosta esattamente nel caso per cui e' stata fatta.
+                                #
+                                # DOPO il segnale al worker e in un try suo: il giro puo' aspettare
+                                # fino a dieci secondi che Home Assistant finisca di autenticarsi,
+                                # e dentro il blocco sopra quell'attesa avrebbe ritardato l'avvio
+                                # della socket mentre un'eccezione avrebbe fatto credere all'add-on
+                                # di non essere registrato.
+                                try:
+                                    if WebServer.Instance is not None:
+                                        WebServer.Instance.ProprietarioAuthId()
+                                except Exception as e:
+                                    self.Logger.warning(f"Proprietario non risolto a questo giro: {e}")
                             elif response.ok:
                                 self.Logger.error(f"Sweetplace Onboarding: {api_url} ha risposto HTTP {response.status_code} ma senza conferma di registrazione. Controllare che SWEETPLACE_ONBOARD_API punti a /device/ping.")
                             elif response.status_code == 409 and self.WipedForCloning:
