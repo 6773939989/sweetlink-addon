@@ -1281,6 +1281,25 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         color: var(--secondary-text-color);
         cursor: default;
     }
+
+    /* ── SU UNO SCHERMO STRETTO I DUE COMANDI PRENDONO TUTTA LA RIGA ──────────────────
+       La misura fissa di 17rem serve su schermo largo, dove tiene della stessa larghezza il
+       pulsante che apre la configurazione e quello che azzera l'apparecchio, dentro una colonna
+       molto piu' ampia di loro: senza, avrebbero misure diverse a seconda del testo.
+       Su uno schermo stretto la colonna e' gia' larga quanto lo schermo, quindi quel vincolo non
+       allinea piu' niente — lascia solo una striscia di vuoto a destra che sembra un errore di
+       impaginazione. A tutta riga sono anche bersagli piu' facili da centrare col pollice.
+       Il campo di conferma segue il suo pulsante: erano stati resi uguali apposta, e lasciarlo
+       indietro spezzerebbe proprio quell'allineamento.
+
+       STA IN FONDO AL FOGLIO, E NON E' INDIFFERENTE. Le regole che fissano quelle larghezze
+       vengono piu' avanti nel foglio: messo dov'era, "width: 100%" sul campo veniva riscritto
+       da "width: 17rem" poche righe dopo, e il campo restava stretto mentre il pulsante si
+       allargava. A parita' di specificita' vince l'ultima. */
+    @media (max-width: 720px) {
+        .featureButton { width: 100%; min-width: 0; box-sizing: border-box; }
+        .prepInput { width: 100%; min-width: 0; }
+    }
 </style>
 </head>
 <body>

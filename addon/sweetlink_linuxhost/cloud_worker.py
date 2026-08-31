@@ -38,6 +38,7 @@ class CloudWorker:
         self.sio.on('command_unban', self._on_unban)
         self.sio.on('command_set_location', self._on_set_location)
         self.sio.on('command_generate_password', self._on_generate_password)
+        self.sio.on('owner_changed', self._on_owner_changed)
 
     def Start(self, logger, plugin_id, private_key, ha_connection, storage_dir):
         self.logger = logger
@@ -388,6 +389,30 @@ class CloudWorker:
         except Exception as e:
             self.logger.warning(f"[CloudWorker] Elenco dei membri non disponibile: {e}")
             return None
+
+
+    # CHI E' IL PROPRIETARIO DI CASA, saputo nell'istante in cui viene deciso.
+    #
+    # Serve al pannello dell'add-on, che senza questo dato non ha modo di distinguere il
+    # proprietario dagli altri membri: e' un utente standard di Home Assistant come loro. Arrivava
+    # solo dentro la risposta al ping, che si ripete ogni sei ore, e in quella finestra il
+    # proprietario apriva il pannello e leggeva che non era pagina per lui.
+    def _on_owner_changed(self, data):
+        try:
+            auth_id = str((data or {}).get('owner_auth_id') or '')
+            if len(auth_id) == 0:
+                self.logger.warning("[CloudWorker] Proprietario annunciato senza identificativo: ignorato.")
+                return
+            from .webserver import WebServer
+            if WebServer.Instance is None:
+                # Il pannello non e' ancora in piedi. Non e' un guasto: il ping successivo porta
+                # comunque il dato, e questa via serve solo ad anticiparlo.
+                self.logger.info("[CloudWorker] Proprietario annunciato, ma il pannello non e' ancora avviato.")
+                return
+            WebServer.Instance.SetClaimInfo(None, None, None, auth_id)
+            self.logger.info("[CloudWorker] Il pannello sa chi e' il proprietario di casa.")
+        except Exception as e:
+            self.logger.warning(f"[CloudWorker] Annuncio del proprietario non applicato: {e}")
 
 
     def _on_fetch_users(self, data):

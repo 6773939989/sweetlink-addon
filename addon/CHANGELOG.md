@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.82
+
+- 🐛 Il pannello riconosce il proprietario di casa appena il suo account viene creato. Prima lo scopriva al ping successivo, fino a sei ore dopo, e nel frattempo gli rispondeva che quella pagina non era per lui.
+- 📐 Su schermo stretto i due comandi e il campo di conferma prendono tutta la riga.
+
 ## 2.7.81
 
 - 📝 Ogni file sorgente dichiara la propria licenza, da dove viene e se l'abbiamo modificato — distinguendo i file toccati da quelli lasciati come li abbiamo trovati.
