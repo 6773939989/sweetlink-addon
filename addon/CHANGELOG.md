@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.83
+
+- 🐛 Il proprietario di casa entra nel pannello anche se il suo identificativo era stato registrato sbagliato. L'add-on ora lo ricava dall'anagrafica di Home Assistant partendo dal nome di accesso — l'unico dato verificabile su questa macchina — e corregge quello che ha in memoria il portale.
+
 ## 2.7.82
 
 - 🐛 Il pannello riconosce il proprietario di casa appena il suo account viene creato. Prima lo scopriva al ping successivo, fino a sei ore dopo, e nel frattempo gli rispondeva che quella pagina non era per lui.

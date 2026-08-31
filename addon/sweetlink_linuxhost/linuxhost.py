@@ -116,6 +116,28 @@ class LinuxHost(IStateChangeHandler):
         return HaAdmin.IsUserAdmin(self.Logger, self.HaConnection, userId)
 
 
+    # L'identificativo dell'utente proprietario, ricavato dal suo nome di accesso.
+    #
+    # Passa dal worker perche' li' c'e' la connessione a Home Assistant, la sola che possa dire
+    # quale utente porta quel nome di accesso.
+    def RisolviProprietario(self, nomeAccesso:Optional[str]) -> Optional[str]:
+        try:
+            from .cloud_worker import CloudWorkerInstance
+            return CloudWorkerInstance.RisolviProprietario(nomeAccesso)
+        except Exception as e:
+            self.Logger.warning(f"Proprietario non risolvibile: {e}")
+            return None
+
+
+    # Dice al backend l'identificativo giusto quando quello che ci aveva mandato non lo era.
+    def CorreggiProprietario(self, authId:str) -> None:
+        try:
+            from .cloud_worker import CloudWorkerInstance
+            CloudWorkerInstance.CorreggiProprietario(authId)
+        except Exception as e:
+            self.Logger.warning(f"Correzione del proprietario non spedita: {e}")
+
+
     # Le persone di casa, o None se non si e' potuto chiedere.
     #
     # Passa dal worker perche' li' c'e' la connessione a Home Assistant e lo schedario dei nomi di
@@ -411,7 +433,8 @@ class LinuxHost(IStateChangeHandler):
             onboardBaseUrl = onboardApiUrl.rsplit('/device', 1)[0]
             self.WebServer = WebServer(self.Logger, pluginId, self.Config, devConfig, onboardBaseUrl, self.GetPanelMac,
                                        self.BuildImagePrepReport, self.WipeForCloning, self.IsHaUserAdmin,
-                                       self.ChiediLinkPannello, self.ElencoMembri)
+                                       self.ChiediLinkPannello, self.ElencoMembri,
+                                       self.RisolviProprietario, self.CorreggiProprietario)
             self.WebServer.Start(self.AddonType)
 
             # Set if remote access is enabled from the config.
@@ -651,7 +674,8 @@ class LinuxHost(IStateChangeHandler):
                                                 righe[0].get("claim_code"),
                                                 righe[0].get("claim_status"),
                                                 righe[0].get("claim_url"),
-                                                righe[0].get("owner_auth_id"))
+                                                righe[0].get("owner_auth_id"),
+                                                righe[0].get("owner_username"))
                                 except Exception:
                                     registrato = False
 

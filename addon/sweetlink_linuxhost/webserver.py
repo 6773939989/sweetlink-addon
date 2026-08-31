@@ -57,7 +57,9 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                  reportProvider:Callable[[], List[Dict[str, str]]], wipeAction:Callable[[], List[Dict[str, str]]],
                  adminCheck:Callable[[str], Optional[bool]],
                  panelLinkProvider:Callable[[], Optional[str]],
-                 membersProvider:Callable[[], Optional[List[Dict[str, str]]]]) -> None:
+                 membersProvider:Callable[[], Optional[List[Dict[str, str]]]],
+                 ownerResolver:Callable[[Optional[str]], Optional[str]],
+                 ownerFixer:Callable[[str], None]) -> None:
         WebServer.Instance = self
         self.Logger = logger
         self.PluginId = pluginId
@@ -71,6 +73,18 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # proprietario, e trattare "non lo so ancora" come "sei tu" aprirebbe il pannello al
         # primo che passa.
         self.OwnerAuthId:Optional[str] = None
+        # Il nome di accesso del proprietario, che e' il dato con cui l'identificativo qui sopra
+        # si puo' controllare: in Home Assistant e' unico, e l'anagrafica sta su questa macchina.
+        self.OwnerUsername:Optional[str] = None
+        # Quello ricavato dall'anagrafica, tenuto da parte: il giro costa una domanda a Home
+        # Assistant e il risultato non cambia. Resta None finche' non si e' potuto ricavare, cosi'
+        # al caricamento successivo si riprova — all'avvio Home Assistant puo' non essere ancora
+        # raggiungibile, ed e' una condizione che passa da sola.
+        self.OwnerAuthIdRisolto:Optional[str] = None
+        # Da nome di accesso a identificativo dell'utente, chiedendolo a Home Assistant.
+        self.OwnerResolver = ownerResolver
+        # Dice al backend l'identificativo giusto, quando quello che ci aveva mandato non lo era.
+        self.OwnerFixer = ownerFixer
         self.Config = config
         # Il referto sulla preparazione dell'immagine e l'azzeramento vero e proprio. Stanno qui
         # e non nel tab di configurazione perche' chi prepara l'immagine deve vedere cosa c'e'
@@ -132,7 +146,8 @@ class WebServer(IAccountLinkStatusUpdateHandler):
     # Chiamato dal reporter a ogni registrazione riuscita: il codice non cambia mai, ma lo stato
     # della rivendicazione si', e il pannello deve dire se l'hub e' ancora da consegnare.
     def SetClaimInfo(self, claimCode:Optional[str], claimStatus:Optional[str],
-                     claimUrl:Optional[str] = None, ownerAuthId:Optional[str] = None) -> None:
+                     claimUrl:Optional[str] = None, ownerAuthId:Optional[str] = None,
+                     ownerUsername:Optional[str] = None) -> None:
         if isinstance(claimCode, str) and len(claimCode) > 0:
             self.ClaimCode = claimCode
         if isinstance(claimStatus, str) and len(claimStatus) > 0:
@@ -146,6 +161,51 @@ class WebServer(IAccountLinkStatusUpdateHandler):
         # dagli altri membri, e il pannello dovrebbe o nascondersi anche a lui o aprirsi a tutti.
         if isinstance(ownerAuthId, str) and len(ownerAuthId) > 0:
             self.OwnerAuthId = ownerAuthId
+        # Il nome di accesso e' il dato con cui l'identificativo qui sopra si puo' CONTROLLARE:
+        # in Home Assistant e' unico, e l'anagrafica sta su questa macchina.
+        if isinstance(ownerUsername, str) and len(ownerUsername) > 0:
+            self.OwnerUsername = ownerUsername
+
+
+    # L'IDENTIFICATIVO DEL PROPRIETARIO, RICAVATO E NON CREDUTO.
+    #
+    # Il backend ce ne manda uno, ma e' un valore che da qui non si puo' controllare — e per un
+    # periodo e' stato sbagliato: ci finiva l'identificativo della PERSONA invece di quello
+    # dell'UTENTE, sono due cose diverse, e nessun percorso lo ricalcolava. Il risultato e' che
+    # chi ha registrato la casa in quella finestra apre questo pannello e legge che non e' pagina
+    # per lui. Per sempre, perche' niente lo correggeva.
+    #
+    # Il nome di accesso invece si controlla: in Home Assistant e' unico, e l'anagrafica sta su
+    # questa macchina. Si parte da li' e si ricava l'identificativo vero.
+    #
+    # Quando i due non combaciano vince quello ricavato, e lo si dice al backend: la colonna
+    # sbagliata va corretta una volta, non aggirata a ogni caricamento di pagina.
+    #
+    # Il risultato si tiene in memoria perche' questo giro chiede l'anagrafica a Home Assistant, e
+    # farlo a ogni caricamento sarebbe un giro di rete per una cosa che non cambia.
+    def ProprietarioAuthId(self) -> Optional[str]:
+        if self.OwnerAuthIdRisolto is not None:
+            return self.OwnerAuthIdRisolto
+
+        nome = self.OwnerUsername
+        if isinstance(nome, str) and len(nome) > 0:
+            trovato = self.OwnerResolver(nome)
+            if isinstance(trovato, str) and len(trovato) > 0:
+                if trovato != self.OwnerAuthId:
+                    self.Logger.warning(
+                        "L'identificativo del proprietario che ci ha mandato il backend non e' "
+                        "quello dell'utente %r su questo hub: lo correggo." % nome)
+                    try:
+                        self.OwnerFixer(trovato)
+                    except Exception as e:
+                        self.Logger.warning(f"Correzione del proprietario non spedita: {e}")
+                self.OwnerAuthIdRisolto = trovato
+                return trovato
+
+        # Non si e' potuto ricavare: resta quello che ci hanno mandato, che e' meglio di niente
+        # ma NON si mette in memoria — al prossimo giro si riprova, perche' il motivo per cui non
+        # si e' potuto ricavare (Home Assistant non ancora raggiungibile all'avvio) passa da solo.
+        return self.OwnerAuthId
 
 
     # Il QR dell'etichetta, come SVG da mettere nella pagina.
@@ -309,7 +369,10 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                     # standard e resterebbe fuori da un controllo sul solo ruolo, che e'
                     # esattamente il motivo per cui questa strada esiste: e' casa sua.
                     userId = self.headers.get(HaAdmin.c_UserIdHeader, "")
-                    proprietario = WebServer.Instance.OwnerAuthId
+                    # Lo stesso valore ricavato che usa la pagina: se qui si guardasse quello
+                    # grezzo, il proprietario vedrebbe la sezione delle persone di casa e poi si
+                    # sentirebbe rifiutare il pulsante che ci sta dentro.
+                    proprietario = WebServer.Instance.ProprietarioAuthId()
                     eProprietario = (isinstance(proprietario, str) and len(proprietario) > 0
                                      and userId == proprietario)
                     if not eProprietario and WebServer.Instance.AdminCheck(userId) is not True:
@@ -443,7 +506,7 @@ class WebServer(IAccountLinkStatusUpdateHandler):
                 sonoProprietario = True
             else:
                 sonoAmministratore = WebServer.Instance.AdminCheck(utenteId) is True
-                proprietario = WebServer.Instance.OwnerAuthId
+                proprietario = WebServer.Instance.ProprietarioAuthId()
                 sonoProprietario = (isinstance(proprietario, str) and len(proprietario) > 0
                                     and utenteId == proprietario)
 

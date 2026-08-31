@@ -346,6 +346,55 @@ class CloudWorker:
                 'requestId': request_id, 'success': False, 'riavvio': False, 'error': str(e)})
 
 
+    # CHI E' IL PROPRIETARIO, RICAVATO DAL NOME DI ACCESSO INVECE CHE CREDUTO SULLA PAROLA.
+    #
+    # Il pannello deve distinguere il proprietario dagli altri membri, e non puo' farlo da solo: e'
+    # un utente standard di Home Assistant come loro. Finora si fidava di un identificativo che
+    # arrivava dal backend — un valore che l'apparecchio non aveva modo di controllare, e che per
+    # un periodo e' stato sbagliato: fino a bbe1474 il backend ci scriveva l'identificativo della
+    # PERSONA invece che quello dell'UTENTE, e nessun percorso lo ricalcolava. Chi ha registrato
+    # la casa in quella finestra apre il pannello e legge che non e' pagina per lui, per sempre.
+    #
+    # Il nome di accesso invece e' verificabile qui: in Home Assistant e' unico, e l'anagrafica sta
+    # su questa macchina. Da quello si ricava l'identificativo vero, e non c'e' niente da credere.
+    #
+    # Restituisce None quando non si e' potuto stabilire — anagrafica non raggiungibile, nome non
+    # trovato — e chi chiama deve trattarlo come "non lo so", che davanti a un pannello di
+    # amministrazione vale no.
+    def RisolviProprietario(self, nomeAccesso):
+        try:
+            if not isinstance(nomeAccesso, str) or len(nomeAccesso) == 0:
+                return None
+            if not self.ha_connection or not getattr(self.ha_connection, 'IsConnected', False):
+                return None
+            risposta = self.ha_connection.SendAndReceiveMsg({"type": "config/auth/list"}, timeout=5.0)
+            if not risposta or not risposta.get('success'):
+                return None
+            for u in (risposta.get('result') or []):
+                if isinstance(u, dict) and u.get('username') == nomeAccesso:
+                    return u.get('id')
+            self.logger.warning(
+                f"[CloudWorker] Nessun utente di Home Assistant con nome di accesso {nomeAccesso!r}: "
+                "il proprietario non e' riconoscibile.")
+            return None
+        except Exception as e:
+            self.logger.warning(f"[CloudWorker] Proprietario non risolvibile: {e}")
+            return None
+
+
+    # Dice al backend l'identificativo giusto, quando quello che ci ha mandato non lo era.
+    #
+    # La verifica la puo' fare solo l'apparecchio, perche' l'anagrafica di Home Assistant sta qui:
+    # se non glielo dicessimo, la colonna resterebbe sbagliata e ogni altra cosa che ci si appoggia
+    # continuerebbe a sbagliare con lei.
+    def CorreggiProprietario(self, authId):
+        try:
+            if isinstance(authId, str) and len(authId) > 0 and self.sio is not None:
+                self.sio.emit('owner_auth_id_corretto', {'owner_auth_id': authId})
+        except Exception as e:
+            self.logger.warning(f"[CloudWorker] Correzione del proprietario non spedita: {e}")
+
+
     # L'elenco delle persone di casa, per chi lo chiede in locale.
     #
     # Lo stesso lavoro che _on_fetch_users fa per il cloud, separato dall'invio: il pannello
