@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.81
+
+- 📝 Ogni file sorgente dichiara la propria licenza, da dove viene e se l'abbiamo modificato — distinguendo i file toccati da quelli lasciati come li abbiamo trovati.
+- 📦 Il bytecode compilato non entra più nell'immagine.
+
 ## 2.7.80
 
 - 📝 La descrizione e la documentazione dell'add-on sono riscritte: quelle di prima erano i testi del progetto da cui questo deriva, con il marchio sostituito, e mandavano nel Discord di un altro progetto chiamandolo nostro.

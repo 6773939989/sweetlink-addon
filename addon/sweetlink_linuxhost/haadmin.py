@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 M2R S.r.l.
+# Parte di Sweetlink. Vedi NOTICE.md.
+
 import logging
 from typing import Any, Dict, List, Optional, cast
 

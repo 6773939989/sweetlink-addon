@@ -1,0 +1,14 @@
+# Cosa NON entra nell'immagine.
+#
+# Il Dockerfile fa "COPY . ./", quindi tutto il contesto di costruzione finisce dentro. In
+# integrazione continua il contesto e' un clone fresco e il problema non si vede; costruendo in
+# locale dopo aver lanciato le prove, invece, ci finisce il bytecode compilato su un'altra
+# versione di Python e un'altra architettura.
+#
+# Non e' teorico: bytecode vecchio rimasto in __pycache__ ha gia' fatto morire in silenzio un
+# processo su questa macchina, con uscita zero e nessun messaggio.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
