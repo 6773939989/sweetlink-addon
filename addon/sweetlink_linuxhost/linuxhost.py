@@ -530,6 +530,31 @@ class LinuxHost(IStateChangeHandler):
             from .sondavocale import Avvia as AvviaSondaVocale
             AvviaSondaVocale(self.Logger)
 
+            # I DUE FILE DEGLI ASSISTENTI VOCALI, RIGENERATI SE SERVE.
+            #
+            # Sta qui, dopo UpdateConfigIfNeeded, perche' li' si stabilisce la connessione a Home
+            # Assistant da cui si legge la versione — che e' uno dei tre valori del controllo
+            # incrociato.
+            #
+            # Scrivere questi due file NON ha effetto finche' il configuration.yaml non li
+            # aggancia con un !include. Su un hub che non e' stato ancora preparato, questa
+            # chiamata produce due file che non legge nessuno: e' voluto, cosi' si puo' guardare
+            # cosa verrebbe generato prima di collegarli davvero.
+            try:
+                from .ha.assistentivocali import AggiornaSeServe
+                # La versione di Home Assistant la tiene la connessione, che l'ha appena letta
+                # nel messaggio di benvenuto (ha/connection.py:209). Puo' essere ancora vuota se
+                # l'autenticazione non e' finita: in quel caso l'intestazione dice "?" e al giro
+                # dopo i file vengono rifatti, che e' esattamente quello che deve succedere.
+                haVersione = getattr(haConnection, "HaVersionString", None)
+                cambiato, righe = AggiornaSeServe(haVersione, pluginVersionStr)
+                for riga in righe:
+                    self.Logger.info(f"[AssistentiVocali] {riga}")
+                if cambiato:
+                    self.Logger.info("[AssistentiVocali] I file sono cambiati. Avranno effetto al prossimo riavvio di Home Assistant.")
+            except Exception as e:
+                self.Logger.warning(f"[AssistentiVocali] Non aggiornati: {e}")
+
             # Setup the WebRTC manager
             self.WebRtcManager = WebRtcManager(self.Logger, pluginId, storageDir, self.Config, configManager)
 

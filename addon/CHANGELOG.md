@@ -1,6 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.90
+
+- 🗣 L'add-on genera i due file di configurazione degli assistenti vocali dalla lista curata della casa: solo le entita' elencate finiscono su Alexa e su Google, con i nomi da pronunciare e le stanze. I file portano in testa la versione di Home Assistant, dell'add-on e della ricetta, e si rifanno da soli quando una delle tre cambia.
+- 🔒 Se la lista non si riesce a leggere, i file generati non espongono niente. Un filtro vuoto in Alexa non vuol dire "niente": vuol dire "tutto".
+
 ## 2.7.89
 
 - 🔎 La sonda guarda anche la cartella dove sta la lista delle entita' da esporre: quanti file ci sono, come si chiamano, quante voci contengono e quali di essi l'add-on legge davvero.
