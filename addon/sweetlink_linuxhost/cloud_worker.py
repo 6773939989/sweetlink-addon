@@ -25,6 +25,10 @@ class CloudWorker:
         self.logger = None
         self.plugin_id = None
         self.private_key = None
+        # La correzione del proprietario che aspetta una socket aperta per partire. Vedi
+        # CorreggiProprietario: il momento in cui si scopre e il momento in cui si puo' dire
+        # non coincidono, e senza questa casella la scoperta andava persa.
+        self._proprietario_da_correggere = None
         self.sio = socketio.Client(reconnection=True, reconnection_delay=5, reconnection_delay_max=30)
 
         # Registra i listener del SocketIO
@@ -74,6 +78,10 @@ class CloudWorker:
 
     def _on_connect(self):
         self.logger.info("[CloudWorker] Securely Authenticated to Sweetplace Cloud WebSocket")
+        # Se c'era una correzione in attesa, adesso c'e' una socket per spedirla. E' qui che
+        # viene spedita davvero quasi sempre: l'avvio scopre il proprietario prima che questa
+        # connessione sia autenticata, e di 450 millisecondi soltanto ma in modo ripetibile.
+        self._spedisci_correzione_proprietario()
 
     def _on_disconnect(self):
         self.logger.warning("[CloudWorker] Disconnected from Sweetplace Cloud WebSocket")
@@ -397,12 +405,40 @@ class CloudWorker:
     # La verifica la puo' fare solo l'apparecchio, perche' l'anagrafica di Home Assistant sta qui:
     # se non glielo dicessimo, la colonna resterebbe sbagliata e ogni altra cosa che ci si appoggia
     # continuerebbe a sbagliare con lei.
+    # PERCHE' NON SI SPEDISCE E BASTA.
+    #
+    # Il momento in cui si scopre chi e' il proprietario e quello in cui lo si puo' dire non
+    # coincidono, e non per caso: la risoluzione parte dalla risposta al ping, che all'avvio
+    # arriva prima che questa socket abbia finito di autenticarsi — misurato su un hub vero,
+    # 450 millisecondi, sempre nello stesso verso. Emettere li' dava "/ is not a connected
+    # namespace" a ogni singolo avvio.
+    #
+    # E il valore risolto viene messo in memoria da chi chiama, giustamente, perche' e'
+    # giusto: senza questa casella la scoperta veniva quindi persa per sempre, e la colonna
+    # sul backend restava sbagliata mentre il pannello locale funzionava. Un guasto che non
+    # si vede da nessuna parte se non leggendo il registro d'avvio.
     def CorreggiProprietario(self, authId):
+        if not isinstance(authId, str) or len(authId) == 0:
+            return
+        self._proprietario_da_correggere = authId
+        self._spedisci_correzione_proprietario()
+
+
+    # Spedisce la correzione in attesa, se ce n'e' una e se c'e' una socket. La casella si
+    # svuota SOLO a spedizione avvenuta: finche' resta piena, ogni riconnessione riprova.
+    def _spedisci_correzione_proprietario(self):
+        authId = self._proprietario_da_correggere
+        if authId is None:
+            return
         try:
-            if isinstance(authId, str) and len(authId) > 0 and self.sio is not None:
-                self.sio.emit('owner_auth_id_corretto', {'owner_auth_id': authId})
+            if self.sio is None or not self.sio.connected:
+                self.logger.info("[CloudWorker] Correzione del proprietario in attesa di una socket aperta.")
+                return
+            self.sio.emit('owner_auth_id_corretto', {'owner_auth_id': authId})
+            self._proprietario_da_correggere = None
+            self.logger.info("[CloudWorker] Correzione del proprietario spedita al backend.")
         except Exception as e:
-            self.logger.warning(f"[CloudWorker] Correzione del proprietario non spedita: {e}")
+            self.logger.warning(f"[CloudWorker] Correzione del proprietario non spedita, riprovero': {e}")
 
 
     # L'elenco delle persone di casa, per chi lo chiede in locale.
