@@ -424,21 +424,26 @@ class CloudWorker:
         self._spedisci_correzione_proprietario()
 
 
-    # Spedisce la correzione in attesa, se ce n'e' una e se c'e' una socket. La casella si
-    # svuota SOLO a spedizione avvenuta: finche' resta piena, ogni riconnessione riprova.
+    # Spedisce la correzione in attesa, se ce n'e' una. La casella si svuota SOLO a spedizione
+    # avvenuta: finche' resta piena, il giro di _run_loop riprova ogni dieci secondi.
+    #
+    # NON SI CHIEDE ALLA SOCKET SE E' COLLEGATA, SI PROVA E BASTA. Il controllo su
+    # sio.connected c'era, ed era sbagliato: misurato su un hub vero, dentro il gestore
+    # dell'evento 'connect' — cioe' due millisecondi DOPO la riga "Securely Authenticated" —
+    # quell'attributo risultava ancora falso, e la correzione veniva rimandata per sempre.
+    # La spedizione stessa e' la prova migliore che la socket sia pronta: se non lo e', solleva.
     def _spedisci_correzione_proprietario(self):
         authId = self._proprietario_da_correggere
-        if authId is None:
+        if authId is None or self.sio is None:
             return
         try:
-            if self.sio is None or not self.sio.connected:
-                self.logger.info("[CloudWorker] Correzione del proprietario in attesa di una socket aperta.")
-                return
             self.sio.emit('owner_auth_id_corretto', {'owner_auth_id': authId})
             self._proprietario_da_correggere = None
             self.logger.info("[CloudWorker] Correzione del proprietario spedita al backend.")
         except Exception as e:
-            self.logger.warning(f"[CloudWorker] Correzione del proprietario non spedita, riprovero': {e}")
+            # Non e' un guasto: e' il caso normale finche' la socket non e' pronta, e succede
+            # a ogni avvio. Chi riprova e' il giro di _run_loop.
+            self.logger.debug(f"[CloudWorker] Correzione del proprietario non ancora spedibile: {e}")
 
 
     # L'elenco delle persone di casa, per chi lo chiede in locale.
@@ -1033,6 +1038,15 @@ class CloudWorker:
                     })
             except Exception as e:
                 self.logger.warning(f"[CloudWorker] Connection to cloud failed, retrying in 10s... ({str(e)})")
+
+            # LA CORREZIONE DEL PROPRIETARIO, SE NE E' RIMASTA UNA IN ATTESA.
+            #
+            # Sta qui, e non solo nel gestore di 'connect', perche' quel gestore da solo non
+            # basta: all'avvio parte quando la socket non e' ancora dichiarata collegata, la
+            # spedizione fallisce, e non arriva nessun secondo evento a farla ritentare. Questo
+            # giro invece non dipende da nessun dettaglio interno della libreria — prova, e se
+            # non ci riesce riprova fra dieci secondi, finche' la casella non si svuota.
+            self._spedisci_correzione_proprietario()
 
             time.sleep(10)
 

@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.88
+
+- 🐛 La correzione dell'identificativo del proprietario riprova finche' non parte davvero. Nella versione precedente aspettava che la libreria si dichiarasse collegata, e all'avvio quel momento non arriva mai in tempo.
+
 ## 2.7.87
 
 - 🐛 La correzione dell'identificativo del proprietario aspetta che la connessione al cloud sia aperta, invece di partire mezzo secondo prima e perdersi. All'avvio falliva sempre, e siccome la scoperta non si ripete, la correzione non arrivava mai.
