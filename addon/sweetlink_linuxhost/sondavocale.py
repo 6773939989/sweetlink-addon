@@ -63,6 +63,74 @@ def _riassunto(testo, quanto=600):
     return testo if len(testo) <= quanto else testo[:quanto] + " [...]"
 
 
+# LA CARTELLA DOVE STA LA LISTA DELLE ENTITA' DA ESPORRE.
+#
+# L'add-on la legge gia' (ha/homecontext.py:263), ma conosce solo due nomi: alexa.yaml e
+# google_assistant.yaml. Sull'hub i file sono tre, e il terzo nessuno lo legge. Prima di
+# progettare come questa lista arriva a Home Assistant bisogna sapere cosa c'e' dentro
+# davvero: quanti file, come si chiamano, che forma hanno e quante voci contengono.
+#
+# I tre percorsi sono gli stessi, nello stesso ordine, di _GetSweetplaceYamlPath: se qui se
+# ne cercasse uno solo, la sonda direbbe "non c'e' niente" su un'installazione dove il
+# lettore vero trova tutto.
+c_CartelleFiltri = (
+    "/homeassistant/sweetplace/haconfig/this-home/vocal_assistants",
+    "/home/homeassistant/.homeassistant/sweetplace/haconfig/this-home/vocal_assistants",
+    "/config/sweetplace/haconfig/this-home/vocal_assistants",
+)
+
+
+def _cartellaFiltri(logger):
+    import os as _os
+    cartella = None
+    for c in c_CartelleFiltri:
+        if _os.path.isdir(c):
+            cartella = c
+            break
+    if cartella is None:
+        logger.info("[SondaVocale] LISTA ENTITA': nessuna delle tre cartelle esiste su questo hub.")
+        return
+
+    logger.info(f"[SondaVocale] LISTA ENTITA' in {cartella}")
+    try:
+        nomi = sorted(_os.listdir(cartella))
+    except Exception as e:
+        logger.info(f"[SondaVocale]   non si e' potuta leggere: {e}")
+        return
+
+    if len(nomi) == 0:
+        logger.info("[SondaVocale]   la cartella e' vuota.")
+        return
+
+    for nome in nomi:
+        percorso = _os.path.join(cartella, nome)
+        try:
+            quanti = _os.path.getsize(percorso)
+        except Exception:
+            quanti = -1
+        chiavi = "?"
+        voci = "?"
+        try:
+            import yaml
+            with open(percorso, "r", encoding="utf-8") as f:
+                dati = yaml.safe_load(f)
+            if isinstance(dati, dict):
+                chiavi = ",".join(sorted(dati.keys()))
+                filtro = dati.get("filter")
+                if isinstance(filtro, dict):
+                    dettaglio = []
+                    for k, v in sorted(filtro.items()):
+                        dettaglio.append(f"{k}={len(v) if isinstance(v, list) else type(v).__name__}")
+                    voci = " ".join(dettaglio)
+            else:
+                chiavi = type(dati).__name__
+        except Exception as e:
+            chiavi = f"non leggibile: {e}"
+        letto = "LETTO dall'add-on" if nome in ("alexa.yaml", "google_assistant.yaml") else "NESSUNO LO LEGGE"
+        logger.info(f"[SondaVocale]   {nome:<28} {quanti:>7} byte   chiavi: {chiavi}")
+        logger.info(f"[SondaVocale]   {'':<28} sotto filter: {voci}   [{letto}]")
+
+
 def _sonda(logger):
     time.sleep(c_AttesaAvvioSec)
 
@@ -122,6 +190,8 @@ def _sonda(logger):
         pass
 
     riga = "=" * 78
+    logger.info(riga)
+    _cartellaFiltri(logger)
     logger.info(riga)
     logger.info("[SondaVocale] PASSO 0(a) — il token del Supervisor sulle rotte vocali")
     logger.info(f"[SondaVocale] Home Assistant versione: {versione}")

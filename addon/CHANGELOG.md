@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.89
+
+- 🔎 La sonda guarda anche la cartella dove sta la lista delle entita' da esporre: quanti file ci sono, come si chiamano, quante voci contengono e quali di essi l'add-on legge davvero.
+
 ## 2.7.88
 
 - 🐛 La correzione dell'identificativo del proprietario riprova finche' non parte davvero. Nella versione precedente aspettava che la libreria si dichiarasse collegata, e all'avvio quel momento non arriva mai in tempo.
