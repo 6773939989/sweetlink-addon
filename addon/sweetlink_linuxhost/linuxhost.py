@@ -522,6 +522,14 @@ class LinuxHost(IStateChangeHandler):
             configManager.SetHaConnection(haConnection)
             configManager.UpdateConfigIfNeeded()
 
+            # SONDA TEMPORANEA, passo 0(a) del lavoro sugli assistenti vocali. Da togliere
+            # quando la risposta e' annotata in sweetlink/ASSISTENTI-VOCALI.md.
+            # Sta QUI, dopo UpdateConfigIfNeeded, perche' e' quella chiamata a scrivere le
+            # sezioni alexa: e google_assistant: nella configurazione: prima di lei le rotte
+            # che la sonda interroga potrebbero non esistere ancora, su un hub appena nato.
+            from .sondavocale import Avvia as AvviaSondaVocale
+            AvviaSondaVocale(self.Logger)
+
             # Setup the WebRTC manager
             self.WebRtcManager = WebRtcManager(self.Logger, pluginId, storageDir, self.Config, configManager)
 

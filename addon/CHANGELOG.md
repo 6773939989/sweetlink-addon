@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.86
+
+- 🔎 Sonda temporanea: all'avvio l'add-on interroga una volta le rotte vocali di Home Assistant e scrive nel registro cosa rispondono. Serve a stabilire una cosa che dal codice non si puo' dedurre, e verra' tolta appena la risposta e' annotata.
+
 ## 2.7.85
 
 - 🎨 L'icona nella barra laterale di Home Assistant e' quella di una casa automatizzata, non piu' un righello.
