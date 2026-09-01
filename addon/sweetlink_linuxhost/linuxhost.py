@@ -542,16 +542,43 @@ class LinuxHost(IStateChangeHandler):
             # cosa verrebbe generato prima di collegarli davvero.
             try:
                 from .ha.assistentivocali import AggiornaSeServe
-                # La versione di Home Assistant la tiene la connessione, che l'ha appena letta
-                # nel messaggio di benvenuto (ha/connection.py:209). Puo' essere ancora vuota se
-                # l'autenticazione non e' finita: in quel caso l'intestazione dice "?" e al giro
-                # dopo i file vengono rifatti, che e' esattamente quello che deve succedere.
-                haVersione = getattr(haConnection, "HaVersionString", None)
-                cambiato, righe = AggiornaSeServe(haVersione, pluginVersionStr)
-                for riga in righe:
-                    self.Logger.info(f"[AssistentiVocali] {riga}")
-                if cambiato:
-                    self.Logger.info("[AssistentiVocali] I file sono cambiati. Avranno effetto al prossimo riavvio di Home Assistant.")
+                # SI ASPETTA LA VERSIONE DI HOME ASSISTANT, IN UN THREAD A PARTE.
+                #
+                # La connessione la legge dal messaggio di benvenuto (ha/connection.py:208), che
+                # arriva qualche decina di millisecondi DOPO questo punto: misurato su un hub
+                # vero, la connessione parte a 39,983 e la versione compare a 40,030. Generando
+                # subito, l'intestazione diceva "ha=?" — e siccome poi ogni avvio ritrovava "?"
+                # da entrambe le parti, i due valori combaciavano sempre e il controllo
+                # incrociato restava spento per sempre: un aggiornamento di Home Assistant non
+                # avrebbe fatto rifare niente, che e' l'unica cosa per cui quel controllo esiste.
+                #
+                # Si aspetta in un thread suo perche' questo e' il percorso d'avvio: un'attesa
+                # qui ritarderebbe tutto il resto per una cosa che puo' benissimo succedere fra
+                # mezzo secondo.
+                def _generaQuandoSiSaLaVersione():
+                    try:
+                        attesa = 0.0
+                        haVersione = None
+                        while attesa < 30.0:
+                            haVersione = getattr(haConnection, "HaVersionString", None)
+                            if isinstance(haVersione, str) and len(haVersione) > 0:
+                                break
+                            time.sleep(0.5)
+                            attesa += 0.5
+                        if not haVersione:
+                            # Si genera lo stesso, con "?", perche' avere i file chiusi e' meglio
+                            # che non averli: al primo avvio in cui la versione si sa, l'intestazione
+                            # non combacia e vengono rifatti.
+                            self.Logger.warning("[AssistentiVocali] Versione di Home Assistant non pervenuta: genero con '?'.")
+                        cambiato, righe = AggiornaSeServe(haVersione, pluginVersionStr)
+                        for riga in righe:
+                            self.Logger.info(f"[AssistentiVocali] {riga}")
+                        if cambiato:
+                            self.Logger.info("[AssistentiVocali] I file sono cambiati. Avranno effetto al prossimo riavvio di Home Assistant.")
+                    except Exception as e:
+                        self.Logger.warning(f"[AssistentiVocali] Non aggiornati: {e}")
+
+                threading.Thread(target=_generaQuandoSiSaLaVersione, daemon=True).start()
             except Exception as e:
                 self.Logger.warning(f"[AssistentiVocali] Non aggiornati: {e}")
 

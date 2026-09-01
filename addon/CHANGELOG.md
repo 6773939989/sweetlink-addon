@@ -1,6 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 <!-- This is used in the sweetplace UI to show updates, so keep it up to date. -->
 
+## 2.7.91
+
+- 🐛 I file degli assistenti vocali aspettano di sapere la versione di Home Assistant prima di essere scritti. Nella versione precedente venivano generati qualche decina di millisecondi troppo presto, e il controllo che li rifa' quando Home Assistant si aggiorna restava spento.
+
 ## 2.7.90
 
 - 🗣 L'add-on genera i due file di configurazione degli assistenti vocali dalla lista curata della casa: solo le entita' elencate finiscono su Alexa e su Google, con i nomi da pronunciare e le stanze. I file portano in testa la versione di Home Assistant, dell'add-on e della ricetta, e si rifanno da soli quando una delle tre cambia.
